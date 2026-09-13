@@ -52,6 +52,42 @@
 
 Prefer small, direct shell scripts over heavy abstractions. Keep harness-specific behavior in harness-specific files and shared behavior in clearly named common helpers.
 
+## Documentation map
+
+- `README.md` — overview, supported-harness list, quick start, and topic index.
+- `docs/setup.md` — prerequisites, host integration, state, mounts, and image setup.
+- `docs/claude-code.md`, `docs/codex.md`, `docs/pi.md`, `docs/vibe.md` — harness-specific setup, launchers, flags, state, and editor integration.
+- `docs/lifecycle.md` — launch and controller commands.
+- `docs/generations.md` — rebuild, handoff, retirement, and garbage collection.
+- `docs/updates.md` — default-branch checks and fast-forward updates.
+- `docs/security.md` — threat model, defense layers, and known limitations.
+- `docs/aws.md`, `docs/gpg.md`, `docs/notifications.md` — optional host integrations.
+- `docs/development.md` — repository layout and validation workflow.
+
+## Generations model
+
+- Treat the current-generation pointer as the atomic handoff for new sessions.
+- Resolve a launcher to one immutable container ID; never retarget an active session after a rebuild.
+- Start and health-check a replacement before switching the pointer. Retire old generations only after their session PID directories are empty.
+
+## Update flow
+
+- Passive checks may inspect the remote default branch but must not fetch or mutate the checkout.
+- Updates require a clean checkout on the default branch and must be fast-forward only.
+- Preserve and restore the prior branch and commit if an update fails; avoid update/re-exec loops.
+
+## Security posture
+
+- Optimize for preventing accidental damage from bad prompts, not containment of a malicious actor.
+- Preserve the Docker wrapper, filter proxy, socket proxy, Git-push guard, canonical-path validation, and bind-mount allowlist as defense-in-depth layers.
+- Keep server-side Git protection authoritative and document intentional bypasses and residual Docker API gaps.
+
+## Design decisions
+
+- Mirror host paths and identity so terminal, editor, Compose, debugger, and language-server workflows remain natural.
+- Keep one shared image and lifecycle; define harness-specific binaries, session variables, wrappers, and flags in the common harness table.
+- Prefer explicit, recoverable state transitions and fail-closed validation. Avoid hardening that breaks the intended daily workflow without a demonstrated risk reduction.
+
 ## Quick start
 
 ```bash

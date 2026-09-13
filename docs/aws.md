@@ -20,3 +20,8 @@ Compose forwards `AWS_AI_PROXY_ENABLED`, `AWS_AI_PROXY_URL`, and
 `AWS_AI_PROXY_PROFILE_CONFIG` to the harness. Set the enabled flag only when the
 host service is running and reachable from `host.docker.internal`; the default
 URL uses port 9998.
+
+On start or rebuild, the controller queries the enabled profile list and derives
+the container-side profile mappings. Expired SSO sessions must be refreshed on
+the host. The sandbox consumes the resulting short-lived, read-only credentials
+but never manages the host proxy.

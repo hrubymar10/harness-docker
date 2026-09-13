@@ -1,0 +1,25 @@
+# Notifications
+
+A `claude-notifier` command is available in the sandbox. Use it for sparse, asynchronous notification of meaningful events.
+
+## When to notify
+
+| Event | Category |
+| --- | --- |
+| Build or test succeeds | `success` |
+| Build or test fails | `error` |
+| Three or more repeated failures | `frustration` |
+| Important warning | `warning` |
+| Requested task is complete | `task_complete` |
+| User input is required | `attention` |
+| A search found its target | `target` |
+| A long task reaches a milestone | `encouragement` |
+| A light sarcastic cue fits | `sarcasm` |
+
+Run notifications in the background so they never delay work:
+
+```bash
+claude-notifier error &
+```
+
+Do not notify for routine tool calls, every commit, or every intermediate step. Notify no more than once per logical event.

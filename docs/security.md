@@ -47,3 +47,20 @@ Configured project roots and harness state are still visible read-write inside
 the sandbox. Git/provider credentials passed through environment variables are
 also visible to sandbox processes. Keep local mounts narrow and do not use this
 stack for hostile-code isolation.
+
+## Known limitations
+
+- A raw Docker API caller can create a local-driver volume backed by an arbitrary
+  host path because the upstream socket proxy does not inspect volume-driver
+  bind options.
+- Docker inspection and logs can reveal sibling-container metadata and output.
+- Harness state directories are read-write and may contain authentication or
+  session data.
+- Network egress is unrestricted.
+- Harness extensions, packages, plugins, skills, prompts, and local instruction
+  files are trusted code or trusted input.
+- The notification server's bundled sound playback is macOS-specific unless its
+  player is replaced.
+
+These accepted gaps and their rationale are maintained in
+[`SECURITY_ISSUES.md`](../SECURITY_ISSUES.md).

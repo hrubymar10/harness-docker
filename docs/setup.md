@@ -18,7 +18,32 @@ The setup scripts also:
   stream-safe.
 
 Only mount paths and configuration that sandboxed processes may read. Machine
-specific configuration belongs in ignored files under `config/`.
+specific configuration belongs in ignored files under `config/`. Copy
+[`config/.env.example`](../config/.env.example) to the ignored `config/.env`
+only when automatic host detection needs an override.
+
+## Harness state and authentication
+
+The controller creates missing state directories. Defaults and overrides are:
+
+| Harness | Host directory | Override |
+| --- | --- | --- |
+| Claude Code | `~/.claude` | `CLAUDE_CONFIG_DIR` |
+| Codex CLI | `~/.codex` | `CODEX_HOME` |
+| pi | `~/.pi/agent` | `PI_CODING_AGENT_DIR` |
+| Mistral Vibe | `~/.vibe` | `VIBE_HOME` |
+
+Authenticate only the harnesses you use on the host: run `claude`, `codex
+login`, pi or Vibe's `/login` flow, or provide the relevant provider API key.
+Unused harness directories may remain empty. GitHub/GitLab CLI tokens, Git
+identity, Go settings, UID, home, and shell are detected where possible.
+
+Claude's legacy single-file configuration cannot be updated safely through a
+Docker Desktop file bind. Quit Claude processes, move `~/.claude.json` to
+`~/.claude/.claude.json`, and persist
+`CLAUDE_CONFIG_DIR="$HOME/.claude"`. Startup refuses the unsafe legacy layout.
+`PI_PACKAGE_DIR` may select a separate pi package directory. Every configured
+path must be absolute.
 
 ## Building the image
 
@@ -45,6 +70,11 @@ Copy `config/docker-compose.local.example.yml` to
 only the project roots needed for work. Keep the same absolute paths inside and
 outside the container so editors, Git, Compose, and debuggers agree. Local
 overrides may also add resources or GPU access without changing the shared file.
+
+The local file's `x-excludes` list masks selected files with `/dev/null` and
+directories with empty read-only tmpfs mounts. Use it for secrets nested below a
+mounted project root. It is a visibility guard inside this stack, not a promise
+that hostile code cannot reach other exposed interfaces.
 
 The Compose stack mounts harness state read-write, `gpg-keys/` and custom tools
 read-only, and the Docker socket only into the socket proxy. Use the memory-limit

@@ -29,3 +29,8 @@ direct, preserve security defaults in tests, and never commit a red tree.
 
 Dependency changes require explicit approval before editing package lists or Go
 modules. Propose the package and version, why it is needed, and its risk first.
+
+For image or Compose work, render the Compose model and build the affected image
+in addition to the host suite. Keep documentation links repository-relative and
+update the owning page in the same commit as user-visible flags, environment
+variables, tool names, behavior, or supported-harness changes.

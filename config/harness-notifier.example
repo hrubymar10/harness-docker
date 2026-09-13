@@ -1,13 +1,26 @@
 #!/bin/bash
 # harness-notifier — notification script called from inside the container.
+#
 # Usage: harness-notifier <CATEGORY>
 #
-# The script runs inside the container. A host notification service can be
-# reached through host.docker.internal; uncomment one integration below.
+# Categories used by the examples:
+#   success, error, frustration, warning, task_complete,
+#   attention, target, encouragement, sarcasm
+#
+# The script runs inside the container. The beeper, sounder, or another
+# notification service runs on the host and is reached through
+# host.docker.internal. Managing that host service is your responsibility.
 
 CATEGORY="${1:-notification}"
 
+# ── Beeper (bundled Go server on port 9999) ─────────────────────
+# Ignores the category and plays one beep.
+# Start on the host with: harness-docker-ctrl beeper-start
 # curl -s "http://host.docker.internal:9999/beep" >/dev/null 2>&1 &
+
+# ── Sounder or another category-aware service ──────────────────
+# Uses the category to select a contextual sound.
 # curl -s "http://host.docker.internal:9999/play/${CATEGORY}" >/dev/null 2>&1 &
 
+# ── No-op (remove this line after enabling an integration) ──────
 exit 0

@@ -1,0 +1,11 @@
+# Category-aware notifications
+
+A category-aware host sound service is available through `claude-notifier`. Invoke `claude-notifier <CATEGORY>` asynchronously and only for meaningful events.
+
+Hooks handle `TASK_COMPLETE` and `ATTENTION`; do not play those manually. Useful manual categories are `SUCCESS`, `ERROR`, `FRUSTRATION`, `WARNING`, `ENCOURAGEMENT`, and `SARCASM`.
+
+```bash
+claude-notifier ERROR &
+```
+
+Do not play sounds for routine tool calls, every commit, or every intermediate step. Subagents should not play sounds.

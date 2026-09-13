@@ -15,3 +15,8 @@ to `claude-docker-vscode-wrapper` as `claudeCode.claudeProcessWrapper` and set
 `claudeCode.useTerminal` to `false`, because terminal mode bypasses the wrapper.
 The launcher exports `CLAUDE_SESSION_ID` and uses the mounted
 `CLAUDE_CONFIG_DIR`.
+
+Claude's configuration must use the directory layout described in
+[Setup](setup.md); the controller fails closed when the unsafe legacy file bind
+would be selected. Authentication is performed on the host and reused through
+the mounted directory.
