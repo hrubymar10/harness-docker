@@ -16,7 +16,8 @@ the project mounts the sandbox should see, provide the required host-path and
 identity variables, then run:
 
 ```bash
-docker compose up -d --build
+harness-docker-ctrl start
+harness-docker-ctrl status
 ```
 
 ## Documentation

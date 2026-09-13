@@ -1,0 +1,500 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}")")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONFIG_DIR="$PROJECT_DIR/config"
+HARNESS_DOCKER_ROOT="$PROJECT_DIR"
+HARNESS_COMPOSE_PROJECT_NAME="${HARNESS_COMPOSE_PROJECT_NAME:-}"
+MIN_API_VERSION=1.44
+SSH_RELAY_PORT=19922
+SSH_RELAY_PID_FILE="$HOME/.harness-docker-ssh-relay.pid"
+BEEPER_PID_FILE="$HOME/.harness-docker-beeper.pid"
+AWS_PROXY_MIGRATION_CHECK=false
+COMPOSE_FILES=()
+TEMP_OVERRIDES=()
+
+# shellcheck source=bin/lib/harness.sh
+source "$SCRIPT_DIR/lib/harness.sh"
+# shellcheck source=bin/lib/generations.sh
+source "$SCRIPT_DIR/lib/generations.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/session-cleanup.sh"
+
+die() { echo "Error: $*" >&2; exit 1; }
+cleanup_temp_overrides() { ((${#TEMP_OVERRIDES[@]} == 0)) || rm -f "${TEMP_OVERRIDES[@]}"; }
+trap cleanup_temp_overrides EXIT
+
+normalize_env_key() {
+  local key="$1"
+  key="${key#"${key%%[![:space:]]*}"}"
+  key="${key%"${key##*[![:space:]]}"}"
+  [[ "$key" =~ ^export[[:space:]]+(.+)$ ]] && key="${BASH_REMATCH[1]}"
+  printf '%s\n' "$key"
+}
+
+load_env_file() {
+  local line key val
+  [[ -f "$CONFIG_DIR/.env" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^[[:space:]]*# || -z "${line//[[:space:]]/}" || "$line" != *=* ]] && continue
+    key=$(normalize_env_key "${line%%=*}")
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "invalid key in config/.env: $key"
+    val="${line#*=}"
+    if [[ "$val" == '"'*'"' ]]; then val="${val#\"}"; val="${val%\"}"
+    elif [[ "$val" == "'"*"'" ]]; then val="${val#\'}"; val="${val%\'}"; fi
+    [[ -n "${!key:-}" ]] || export "$key=$val"
+  done < "$CONFIG_DIR/.env"
+}
+
+require_absolute_dir() {
+  local name="$1" value="$2"
+  [[ "$value" == /* ]] || die "$name must be an absolute path: $value"
+  mkdir -p "$value"
+}
+
+bootstrap_config_dirs() {
+  export HOST_USER="${HOST_USER:-$(whoami)}"
+  export HOST_UID="${HOST_UID:-$(id -u)}"
+  export HOST_HOME="${HOST_HOME:-$HOME}"
+  require_absolute_dir HOST_HOME "$HOST_HOME"
+
+  if [[ -z "${CLAUDE_CONFIG_DIR:-}" ]]; then
+    if [[ -e "$HOME/.claude.json" ]]; then
+      cat >&2 <<'BANNER'
+
+CLAUDE_CONFIG_DIR is not set, but ~/.claude.json exists.
+Single-file bind mounts break when applications replace files with atomic writes,
+so harness-docker only mounts a Claude configuration directory.
+
+Quit all Claude Code instances, then migrate and export the directory:
+  mkdir -p "$HOME/.claude"
+  mv "$HOME/.claude.json" "$HOME/.claude/.claude.json"
+  export CLAUDE_CONFIG_DIR="$HOME/.claude"
+
+Add the export to your shell profile, then run this command again.
+BANNER
+      exit 1
+    fi
+    CLAUDE_CONFIG_DIR="$HOME/.claude"
+    echo "CLAUDE_CONFIG_DIR was not set; using $CLAUDE_CONFIG_DIR" >&2
+    # shellcheck disable=SC2016
+    echo 'Hint: add export CLAUDE_CONFIG_DIR="$HOME/.claude" to your shell profile.' >&2
+  fi
+
+  export CLAUDE_CONFIG_DIR_HOST="$CLAUDE_CONFIG_DIR"
+  export CODEX_HOME_HOST="${CODEX_HOME:-$HOME/.codex}"
+  export PI_CODING_AGENT_DIR_HOST="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+  export VIBE_HOME_HOST="${VIBE_HOME:-$HOME/.vibe}"
+  require_absolute_dir CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR_HOST"
+  require_absolute_dir CODEX_HOME "$CODEX_HOME_HOST"
+  require_absolute_dir PI_CODING_AGENT_DIR "$PI_CODING_AGENT_DIR_HOST"
+  require_absolute_dir VIBE_HOME "$VIBE_HOME_HOST"
+  if [[ -n "${PI_PACKAGE_DIR:-}" ]]; then
+    require_absolute_dir PI_PACKAGE_DIR "$PI_PACKAGE_DIR"
+    export PI_PACKAGE_DIR
+  fi
+
+  if [[ ! -f "$CONFIG_DIR/harness-notifier" ]]; then
+    echo 'Note: creating config/harness-notifier from the no-op example.' >&2
+    cp "$CONFIG_DIR/harness-notifier.example" "$CONFIG_DIR/harness-notifier"
+    chmod +x "$CONFIG_DIR/harness-notifier"
+  fi
+}
+
+legacy_aws_proxy_env_vars() {
+  local vars=""
+  [[ -n "${AWS_CRED_PROXY_PROFILES+x}" ]] && vars=AWS_CRED_PROXY_PROFILES
+  [[ -n "${AWS_CRED_PROXY_PORT+x}" ]] && vars="${vars:+$vars,}AWS_CRED_PROXY_PORT"
+  [[ -z "$vars" ]] || printf '%s\n' "$vars"
+}
+
+legacy_aws_proxy_config_vars() {
+  [[ -f "$CONFIG_DIR/.env" ]] || return 0
+  sed -nE '/^[[:space:]]*#/d; s/^[[:space:]]*(export[[:space:]]+)?(AWS_CRED_PROXY_PROFILES|AWS_CRED_PROXY_PORT)=.*/\2/p' "$CONFIG_DIR/.env" | sort -u | paste -sd, -
+}
+
+print_aws_proxy_migration_steps() {
+  cat >&2 <<'EOF'
+Switch to aws-ai-proxy:
+  1. Install and run aws-ai-proxy on the host.
+  2. Configure its host profile list.
+  3. Set AWS_AI_PROXY_ENABLED=true in config/.env.
+  4. Set AWS_AI_PROXY_URL if the proxy does not use its default URL.
+EOF
+}
+
+comment_legacy_aws_proxy_config() {
+  local env_file="$CONFIG_DIR/.env" backup tmp line
+  [[ -f "$env_file" ]] || return 0
+  backup="$env_file.bak.$(date +%Y%m%d%H%M%S)"
+  tmp=$(mktemp "${TMPDIR:-/tmp}/harness-docker-env.XXXXXX")
+  cp "$env_file" "$backup"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ ! "$line" =~ ^[[:space:]]*# && "$line" =~ ^[[:space:]]*(export[[:space:]]+)?(AWS_CRED_PROXY_PROFILES|AWS_CRED_PROXY_PORT)= ]]; then
+      printf '# deprecated: %s\n' "$line"
+    else
+      printf '%s\n' "$line"
+    fi
+  done < "$env_file" > "$tmp"
+  mv "$tmp" "$env_file"
+  echo "Commented legacy settings in config/.env (backup: $backup)." >&2
+}
+
+handle_aws_proxy_migration_choice() {
+  case "$1" in
+    r|R) comment_legacy_aws_proxy_config ;;
+    s|S) print_aws_proxy_migration_steps; die 'complete the AWS proxy migration, then retry' ;;
+    *) echo 'Continuing without AWS proxy migration changes.' >&2 ;;
+  esac
+}
+
+check_aws_proxy_migration() {
+  "$AWS_PROXY_MIGRATION_CHECK" || return 0
+  case "${AWS_AI_PROXY_ENABLED:-false}" in 1|true|TRUE|yes|YES|on|ON) return 0 ;; esac
+  local env_vars="$1" config_vars choice
+  config_vars=$(legacy_aws_proxy_config_vars)
+  [[ -n "$env_vars$config_vars" ]] || return 0
+  echo 'Warning: legacy AWS_CRED_PROXY_* settings are ignored by harness-docker.' >&2
+  [[ -z "$env_vars" ]] || echo "  process environment: $env_vars" >&2
+  [[ -z "$config_vars" ]] || echo "  config/.env: $config_vars" >&2
+  if [[ -n "${HARNESS_DOCKER_AWS_PROXY_MIGRATION_CHOICE:-}" ]]; then
+    handle_aws_proxy_migration_choice "$HARNESS_DOCKER_AWS_PROXY_MIGRATION_CHOICE"
+  elif [[ -t 0 ]]; then
+    read -r -p 'AWS proxy migration: [r] remove, [s] show steps, [i] ignore: ' choice || choice=i
+    handle_aws_proxy_migration_choice "$choice"
+  else
+    print_aws_proxy_migration_steps
+  fi
+}
+
+prepare_aws_ai_proxy_env() {
+  export AWS_AI_PROXY_ENABLED="${AWS_AI_PROXY_ENABLED:-false}"
+  export AWS_AI_PROXY_URL="${AWS_AI_PROXY_URL:-http://host.docker.internal:9998}"
+  export AWS_AI_PROXY_PROFILE_CONFIG=""
+  case "$AWS_AI_PROXY_ENABLED" in 1|true|TRUE|yes|YES|on|ON) ;; *) return 0 ;; esac
+  command -v curl >/dev/null 2>&1 || { echo 'Warning: curl is unavailable; skipping AWS proxy profile fetch.' >&2; return; }
+  local json profiles
+  json=$(curl -fsS --max-time 2 "$AWS_AI_PROXY_URL/profiles" 2>/dev/null) || { echo 'Warning: AWS proxy profiles could not be fetched.' >&2; return; }
+  if command -v jq >/dev/null 2>&1; then
+    profiles=$(printf '%s' "$json" | jq -r '.[] | "\(.name):\(.region)"' | paste -sd, -) || {
+      echo 'Warning: AWS proxy profiles could not be parsed.' >&2; return
+    }
+  elif command -v python3 >/dev/null 2>&1; then
+    profiles=$(printf '%s' "$json" | python3 -c 'import json,sys; print(",".join(p["name"]+":"+p["region"] for p in json.load(sys.stdin)))') || {
+      echo 'Warning: AWS proxy profiles could not be parsed.' >&2; return
+    }
+  else
+    echo 'Warning: jq or python3 is required to parse AWS proxy profiles.' >&2; return
+  fi
+  export AWS_AI_PROXY_PROFILE_CONFIG="$profiles"
+}
+
+resolve_shell() {
+  case "$(basename "$1")" in
+    ash|sh|bash) echo "/bin/$(basename "$1")" ;; dash|elvish|fish|nu|nushell) echo "/usr/bin/$(basename "$1")" ;;
+    ksh|loksh|mksh|oksh|tcsh|csh|yash|zsh) echo "/bin/$(basename "$1")" ;; *) echo /bin/bash ;;
+  esac
+}
+
+setup_env() {
+  load_env_file
+  check_aws_proxy_migration "${LEGACY_AWS_PROXY_ENV_SOURCE:-}"
+  bootstrap_config_dirs
+  if [[ -z "${GO_VERSION:-}" ]]; then
+    GO_VERSION=$(go version 2>/dev/null | awk '{print $3}' | sed 's/\(go[0-9]*\.[0-9]*\.[0-9]*\).*/\1/' || true)
+  fi
+  [[ -n "$GO_VERSION" ]] || GO_VERSION=go1.26.0
+  export GO_VERSION
+  GOPATH="${GOPATH:-$(go env GOPATH 2>/dev/null || printf '%s/go' "$HOME")}"
+  export GOPATH
+  if [[ -z "${GITHUB_TOKEN:-}" ]] && command -v gh >/dev/null; then GITHUB_TOKEN=$(gh auth token 2>/dev/null || true); fi
+  if [[ -z "${GITLAB_TOKEN:-}" ]] && command -v glab >/dev/null; then GITLAB_TOKEN=$(glab config get token --host "${GITLAB_HOST:-gitlab.com}" 2>/dev/null || true); fi
+  export GITHUB_TOKEN="${GITHUB_TOKEN:-}" GITLAB_TOKEN="${GITLAB_TOKEN:-}" GITLAB_HOST="${GITLAB_HOST:-}"
+  export GIT_USER_NAME="${GIT_USER_NAME:-$(git config user.name 2>/dev/null || true)}"
+  export GIT_USER_EMAIL="${GIT_USER_EMAIL:-$(git config user.email 2>/dev/null || true)}"
+  [[ -n "${GONOSUMDB:-}" || -z "${GOPRIVATE:-}" ]] || export GONOSUMDB="$GOPRIVATE"
+  CONTAINER_SHELL=$(resolve_shell "${CONTAINER_SHELL:-${SHELL:-bash}}")
+  export CONTAINER_SHELL
+  if [[ -S "${SSH_AUTH_SOCK:-}" ]]; then export SSH_RELAY_HOST=host.docker.internal SSH_RELAY_PORT; fi
+  prepare_aws_ai_proxy_env
+  configure_compose
+}
+
+add_override() {
+  local kind="$1" body="$2" file
+  file=$(mktemp "${TMPDIR:-/tmp}/harness-docker-${kind}.XXXXXX")
+  printf '%s\n' "$body" > "$file"
+  TEMP_OVERRIDES+=("$file")
+  COMPOSE_FILES+=(-f "$file")
+}
+
+apply_excludes() {
+  local local_file="$CONFIG_DIR/docker-compose.local.yml" in_block=false line pat path count=0
+  local -a patterns=() files=() dirs=()
+  [[ -f "$local_file" ]] || return 0
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^x-excludes: ]]; then in_block=true; continue; fi
+    if $in_block && [[ "$line" =~ ^[[:space:]]*-[[:space:]]+(.*) ]]; then
+      pat="${BASH_REMATCH[1]}"; pat="${pat//\$\{HOST_USER\}/$HOST_USER}"; pat="${pat//\$HOST_USER/$HOST_USER}"
+      pat="${pat//\$\{HOST_HOME\}/$HOST_HOME}"; pat="${pat//\$HOST_HOME/$HOST_HOME}"
+      patterns+=("$pat")
+    elif $in_block; then break; fi
+  done < "$local_file"
+  for pat in "${patterns[@]}"; do
+    while IFS= read -r path; do
+      [[ -z "$path" ]] && continue
+      if [[ -d "$path" ]]; then dirs+=("$path"); else files+=("$path"); fi
+      ((count++)) || true
+    done < <(compgen -G "$pat" 2>/dev/null || true)
+  done
+  ((count)) || return 0
+  local yaml=$'services:\n  harness:' f
+  if ((${#files[@]})); then yaml+=$'\n    volumes:'; for f in "${files[@]}"; do yaml+=$'\n      - /dev/null:'"$f"':ro'; done; fi
+  if ((${#dirs[@]})); then yaml+=$'\n    tmpfs:'; for f in "${dirs[@]}"; do yaml+=$'\n      - '"$f"':ro,size=0'; done; fi
+  add_override excludes "$yaml"
+  echo "Exclude masking: $count paths hidden" >&2
+}
+
+configure_compose() {
+  COMPOSE_FILES=(-f "$PROJECT_DIR/docker-compose.yml")
+  [[ ! -f "$CONFIG_DIR/docker-compose.local.yml" ]] || COMPOSE_FILES+=(-f "$CONFIG_DIR/docker-compose.local.yml")
+  local file base yaml
+  for file in "$HOME/AGENTS.md" "$HOME/CLAUDE.md"; do
+    [[ -f "$file" ]] || continue; base=$(basename "$file")
+    add_override context $'services:\n  harness:\n    volumes:\n      - '"$file:$HOST_HOME/$base:ro"
+  done
+  [[ ! -f "$HOME/.ssh/known_hosts" ]] || add_override ssh $'services:\n  harness:\n    volumes:\n      - '"$HOME/.ssh/known_hosts:$HOST_HOME/.ssh/known_hosts:ro"
+  [[ ! -d "$HOME/.agents" ]] || add_override agents $'services:\n  harness:\n    volumes:\n      - '"$HOME/.agents:$HOST_HOME/.agents"
+  if [[ -n "${DOCKER_GPU:-}" ]]; then
+    if [[ "$DOCKER_GPU" == all ]]; then yaml=$'services:\n  harness:\n    deploy:\n      resources:\n        reservations:\n          devices:\n            - driver: nvidia\n              count: all\n              capabilities: [gpu]'
+    else yaml=$'services:\n  harness:\n    deploy:\n      resources:\n        reservations:\n          devices:\n            - driver: nvidia\n              device_ids: ['"'$DOCKER_GPU'"$']\n              capabilities: [gpu]'; fi
+    add_override gpu "$yaml"
+  fi
+  apply_excludes
+  local errors
+  errors=$(docker compose "${COMPOSE_FILES[@]}" config -q 2>&1) || die "invalid Docker Compose configuration:\n$errors"
+  if [[ -z "${ALLOWED_BIND_MOUNTS:-}" ]]; then
+    ALLOWED_BIND_MOUNTS=$(docker compose "${COMPOSE_FILES[@]}" config | sed -n '/^  harness:/,/^  [a-z]/p' | awk '/source: \/./ {print $2}' | paste -sd, -)
+    export ALLOWED_BIND_MOUNTS
+  fi
+}
+
+check_docker_api_version() {
+  docker info >/dev/null 2>&1 || die 'Docker is not running.'
+  local api; api=$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null || true)
+  [[ -z "$api" ]] && { echo 'Warning: could not determine Docker API version.' >&2; return; }
+  awk -v cur="$api" -v min="$MIN_API_VERSION" 'BEGIN {split(cur,c,"."); split(min,m,"."); exit !((c[1]>m[1]) || (c[1]==m[1] && c[2]>=m[2]))}' || die "Docker API $api is too old; $MIN_API_VERSION or newer is required."
+}
+
+generation_id() {
+  local version="$1" base candidate n=0
+  base=$(printf '%s-%s' "$version" "$(date -u +%Y%m%d%H%M%S)" | sed 's/[^A-Za-z0-9._-]/-/g')
+  candidate="$base"
+  while generation_project_name "$candidate" >/dev/null && list_generations | grep -Fxq "$candidate"; do ((n++)) || true; candidate="$base-$n"; done
+  printf '%s' "$candidate"
+}
+
+generation_image_override() {
+  local version="$1" tag file
+  tag=$(printf '%s' "$version" | sed 's/[^A-Za-z0-9_.-]/-/g; s/^[.-]/v&/')
+  file=$(mktemp "${TMPDIR:-/tmp}/harness-docker-image.XXXXXX")
+  printf 'services:\n  harness:\n    image: harness-docker:%s\n' "$tag" > "$file"
+  TEMP_OVERRIDES+=("$file")
+  IMAGE_OVERRIDE="$file"
+}
+
+wait_for_generation() {
+  local generation="$1" project harness_id filter_id socket_id _attempt
+  project=$(generation_project_name "$generation")
+  echo "Waiting for generation $generation to become healthy..."
+  for _attempt in $(seq 1 90); do
+    harness_id=$(docker ps --filter "label=com.docker.compose.project=$project" --filter label=com.docker.compose.service=harness --filter status=running --format '{{.ID}}' | head -n1)
+    filter_id=$(docker ps --filter "label=com.docker.compose.project=$project" --filter label=com.docker.compose.service=filter-proxy --filter status=running --format '{{.ID}}' | head -n1)
+    socket_id=$(docker ps --filter "label=com.docker.compose.project=$project" --filter label=com.docker.compose.service=socket-proxy --filter status=running --format '{{.ID}}' | head -n1)
+    if [[ -n "$harness_id$filter_id$socket_id" && -n "$harness_id" && -n "$filter_id" && -n "$socket_id" ]] \
+      && docker exec "$harness_id" true >/dev/null 2>&1 \
+      && [[ "$(docker exec "$harness_id" curl -fsS --max-time 2 http://filter-proxy:2375/_ping 2>/dev/null || true)" == OK ]]; then
+      echo "Generation $generation is healthy (filter and socket proxy _ping chain: OK)."
+      return 0
+    fi
+    sleep 2
+  done
+  docker compose -p "$project" "${COMPOSE_FILES[@]}" ps >&2 || true
+  return 1
+}
+
+start_generation() {
+  local no_cache="$1" version generation project image_override
+  version=$(harness_version)
+  generation=$(generation_id "$version")
+  project=$(generation_project_name "$generation")
+  generation_image_override "$version"
+  image_override="$IMAGE_OVERRIDE"
+  echo "Building generation $generation (version $version)..."
+  local -a build_args=(docker compose -p "$project" "${COMPOSE_FILES[@]}" -f "$image_override" build --build-arg "VERSION=$version")
+  [[ "$no_cache" != true ]] || build_args+=(--no-cache)
+  "${build_args[@]}"
+  echo "Starting generation $generation..."
+  docker compose -p "$project" "${COMPOSE_FILES[@]}" -f "$image_override" up -d
+  if ! wait_for_generation "$generation"; then
+    echo "Generation $generation failed health checks; removing it." >&2
+    docker compose -p "$project" "${COMPOSE_FILES[@]}" -f "$image_override" down || true
+    return 1
+  fi
+  STARTED_GENERATION="$generation"
+}
+
+ssh_relay_healthy() {
+  [[ -f "$SSH_RELAY_PID_FILE" ]] || return 1
+  local pid; pid=$(cat "$SSH_RELAY_PID_FILE")
+  kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o command= 2>/dev/null | grep -q "TCP-LISTEN:${SSH_RELAY_PORT}"
+}
+start_ssh_relay() {
+  [[ -S "${SSH_AUTH_SOCK:-}" ]] || return 0
+  ssh_relay_healthy && return 0
+  rm -f "$SSH_RELAY_PID_FILE"
+  command -v socat >/dev/null || { echo 'Warning: socat not found; SSH relay disabled.' >&2; return; }
+  if command -v lsof >/dev/null && lsof -nP -iTCP:"$SSH_RELAY_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "SSH relay port $SSH_RELAY_PORT is already served; reusing it." >&2
+    return 0
+  fi
+  socat TCP-LISTEN:"$SSH_RELAY_PORT",fork,reuseaddr,bind=127.0.0.1 UNIX-CONNECT:"$SSH_AUTH_SOCK" &
+  echo "$!" > "$SSH_RELAY_PID_FILE"
+}
+stop_ssh_relay() { if ssh_relay_healthy; then kill "$(cat "$SSH_RELAY_PID_FILE")"; fi; rm -f "$SSH_RELAY_PID_FILE"; }
+
+start_beeper() {
+  if [[ -f "$BEEPER_PID_FILE" ]] && kill -0 "$(cat "$BEEPER_PID_FILE")" 2>/dev/null; then echo 'Beeper already running.'; return; fi
+  command -v go >/dev/null || die 'go is required to build the beeper'
+  local bin="$PROJECT_DIR/beeper/beeper"
+  go build -o "$bin" "$PROJECT_DIR/beeper/main.go"
+  "$bin" & echo "$!" > "$BEEPER_PID_FILE"
+  echo "Beeper started on ${BEEPER_BIND:-127.0.0.1:9999}."
+}
+stop_beeper() { if [[ -f "$BEEPER_PID_FILE" ]] && kill -0 "$(cat "$BEEPER_PID_FILE")" 2>/dev/null; then kill "$(cat "$BEEPER_PID_FILE")"; fi; rm -f "$BEEPER_PID_FILE"; }
+
+cmd_start() {
+  local current generation
+  if current=$(read_current_generation 2>/dev/null) && [[ -n "$(generation_agent_container_id "$current")" ]]; then echo "Generation $current is already running."; return; fi
+  check_docker_api_version; AWS_PROXY_MIGRATION_CHECK=true; setup_env; AWS_PROXY_MIGRATION_CHECK=false
+  start_generation false
+  generation="$STARTED_GENERATION"
+  write_current_generation "$generation"
+  start_ssh_relay
+  echo "Current generation: $generation"
+}
+
+cmd_rebuild() {
+  local old="" generation
+  old=$(read_current_generation 2>/dev/null || true)
+  check_docker_api_version; AWS_PROXY_MIGRATION_CHECK=true; setup_env; AWS_PROXY_MIGRATION_CHECK=false
+  start_generation true
+  generation="$STARTED_GENERATION"
+  write_current_generation "$generation"
+  [[ -z "$old" || "$old" == "$generation" ]] || mark_generation_retired "$old"
+  reap_retired_generations
+  start_ssh_relay
+  echo "Current generation: $generation"
+}
+
+cmd_stop() {
+  check_docker_api_version
+  setup_env
+  local generation project rc=0
+  while IFS= read -r generation; do
+    [[ -n "$generation" ]] || continue; project=$(generation_project_name "$generation")
+    echo "Stopping $project..."
+    if docker compose -p "$project" -f "$PROJECT_DIR/docker-compose.yml" down; then
+      rm -f "$_RETIRED_GENERATIONS_DIR/$generation"
+    else
+      rc=1
+    fi
+  done < <(list_generations)
+  clear_current_generation; stop_ssh_relay
+  return "$rc"
+}
+
+cmd_build_image() {
+  check_docker_api_version; AWS_PROXY_MIGRATION_CHECK=true; setup_env; AWS_PROXY_MIGRATION_CHECK=false
+  local version image_override project
+  version=$(harness_version); generation_image_override "$version"; image_override="$IMAGE_OVERRIDE"
+  project="${HARNESS_COMPOSE_PROJECT_NAME}-build"
+  docker compose -p "$project" "${COMPOSE_FILES[@]}" -f "$image_override" build --build-arg "VERSION=$version"
+}
+
+cmd_status() {
+  check_docker_api_version
+  local current="" generation project cid version retired sessions marker
+  current=$(read_current_generation 2>/dev/null || true)
+  printf '%-2s %-42s %-22s %-8s %-8s\n' '' PROJECT VERSION RETIRED SESSIONS
+  while IFS= read -r generation; do
+    [[ -n "$generation" ]] || continue; project=$(generation_project_name "$generation")
+    cid=$(generation_agent_container_id "$generation" || true)
+    version='-'; [[ -z "$cid" ]] || version=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$cid" 2>/dev/null || printf '?')
+    retired=no; generation_is_retired "$generation" && retired=yes
+    sessions=$(generation_session_count "$generation"); marker=' '; [[ "$generation" != "$current" ]] || marker='*'
+    printf '%-2s %-42s %-22s %-8s %-8s\n' "$marker" "$project" "$version" "$retired" "$sessions"
+  done < <(list_generations)
+  [[ -n "$(list_generations)" ]] || echo 'No generations.'
+}
+
+check_current_container() { CURRENT_CONTAINER=$(current_agent_container_id) || die 'no current running generation; run start'; }
+check_mount() {
+  local workdir="$1" src
+  for src in $(docker inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$CURRENT_CONTAINER"); do [[ "$workdir" == "$src" || "$workdir" == "$src/"* ]] && return; done
+  die "directory is not mounted in the container: $workdir"
+}
+cmd_shell() {
+  check_current_container; local workdir shell_cmd; workdir=$(pwd); check_mount "$workdir"
+  shell_cmd=$(docker exec "$CURRENT_CONTAINER" printenv CONTAINER_SHELL 2>/dev/null || echo /bin/bash)
+  exec docker exec -it -u "${HOST_USER:-$(whoami)}" -w "$workdir" "$CURRENT_CONTAINER" "$shell_cmd"
+}
+cmd_exec() {
+  local harness="${1:-}"; shift || true
+  case "$harness" in claude|codex|pi|vibe) exec "$SCRIPT_DIR/$harness-docker" "$@" ;; *) die 'usage: harness-docker-ctrl exec <claude|codex|pi|vibe> [args...]' ;; esac
+}
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") <command>
+
+Commands:
+  start                 Start the current generation, creating it if needed
+  stop                  Stop every harness-docker generation
+  restart               Stop all generations and start a new one
+  status                Show generation state and live session counts
+  shell                 Open a shell in the current generation
+  exec <harness> [...]  Run claude, codex, pi, or vibe
+  rebuild               Build and atomically switch to a new generation
+  build-image           Build the image without starting a generation
+  gc                    Reap idle retired generations
+  beeper-start           Start the host notification beeper
+  beeper-stop            Stop the host notification beeper
+  version                Print the checkout version
+  help                   Show this help
+EOF
+}
+
+LEGACY_AWS_PROXY_ENV_SOURCE=$(legacy_aws_proxy_env_vars)
+load_env_file
+HARNESS_COMPOSE_PROJECT_NAME="${HARNESS_COMPOSE_PROJECT_NAME:-${COMPOSE_PROJECT_NAME:-harness-docker}}"
+export COMPOSE_PROJECT_NAME="$HARNESS_COMPOSE_PROJECT_NAME"
+
+case "${1:-help}" in
+  start) cmd_start ;;
+  stop) cmd_stop ;;
+  restart) cmd_stop; cmd_start ;;
+  status) cmd_status ;;
+  shell) cmd_shell ;;
+  exec) shift; cmd_exec "$@" ;;
+  rebuild) cmd_rebuild ;;
+  build|build-image) cmd_build_image ;;
+  gc) check_docker_api_version; setup_env; reap_retired_generations ;;
+  beeper-start) start_beeper ;;
+  beeper-stop) stop_beeper ;;
+  version) harness_version ;;
+  # update is intentionally reserved for the self-update command.
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 1 ;;
+esac

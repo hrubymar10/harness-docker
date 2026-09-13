@@ -36,6 +36,20 @@ write_current_generation() {
   fi
 }
 
+clear_current_generation() {
+  rm -f "$_GENERATION_POINTER"
+}
+
+generation_is_retired() {
+  local generation="$1"
+  _valid_generation "$generation" || return 1
+  [[ -f "$_RETIRED_GENERATIONS_DIR/$generation" ]]
+}
+
+generation_session_count() {
+  _generation_session_count "$1"
+}
+
 generation_agent_container_id() {
   local generation="$1" project
   project=$(generation_project_name "$generation") || return 1

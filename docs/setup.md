@@ -50,3 +50,11 @@ The Compose stack mounts harness state read-write, `gpg-keys/` and custom tools
 read-only, and the Docker socket only into the socket proxy. Use the memory-limit
 setting where desired. Docker Desktop and Docker Engine reach host helpers via
 `host.docker.internal` and the configured host-gateway mapping.
+
+## Starting the stack
+
+Put the repository's `bin/` directory on `PATH`, then run
+`harness-docker-ctrl start`. The controller checks Docker compatibility,
+bootstraps missing local configuration and state directories, derives the bind
+allowlist, builds when necessary, and starts the current generation. Use
+`harness-docker-ctrl status` to inspect it.

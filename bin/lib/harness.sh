@@ -2,6 +2,11 @@
 # Table fields are consumed by the shared launcher after this file is sourced.
 # shellcheck disable=SC2034
 
+harness_version() {
+  local root="${HARNESS_DOCKER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+  git -C "$root" describe --tags --always --dirty
+}
+
 harness_from_launcher() {
   local launcher
   launcher=$(basename "$1")

@@ -1,0 +1,13 @@
+#!/bin/bash
+# harness-notifier — notification script called from inside the container.
+# Usage: harness-notifier <CATEGORY>
+#
+# The script runs inside the container. A host notification service can be
+# reached through host.docker.internal; uncomment one integration below.
+
+CATEGORY="${1:-notification}"
+
+# curl -s "http://host.docker.internal:9999/beep" >/dev/null 2>&1 &
+# curl -s "http://host.docker.internal:9999/play/${CATEGORY}" >/dev/null 2>&1 &
+
+exit 0
