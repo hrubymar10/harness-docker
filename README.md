@@ -29,6 +29,7 @@ harness-docker-ctrl status
 - [pi](docs/pi.md)
 - [Mistral Vibe](docs/vibe.md)
 - [Session lifecycle](docs/lifecycle.md)
+- [Generations and rebuilds](docs/generations.md)
 - [Development](docs/development.md)
 - [Security model](docs/security.md)
 

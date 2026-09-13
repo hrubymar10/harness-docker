@@ -374,10 +374,15 @@ start_beeper() {
 }
 stop_beeper() { if [[ -f "$BEEPER_PID_FILE" ]] && kill -0 "$(cat "$BEEPER_PID_FILE")" 2>/dev/null; then kill "$(cat "$BEEPER_PID_FILE")"; fi; rm -f "$BEEPER_PID_FILE"; }
 
+auto_reap_retired() {
+  reap_retired_generations || true
+}
+
 cmd_start() {
   local current generation
-  if current=$(read_current_generation 2>/dev/null) && [[ -n "$(generation_agent_container_id "$current")" ]]; then echo "Generation $current is already running."; return; fi
   check_docker_api_version; AWS_PROXY_MIGRATION_CHECK=true; setup_env; AWS_PROXY_MIGRATION_CHECK=false
+  auto_reap_retired
+  if current=$(read_current_generation 2>/dev/null) && [[ -n "$(generation_agent_container_id "$current")" ]]; then echo "Generation $current is already running."; return; fi
   start_generation false
   generation="$STARTED_GENERATION"
   write_current_generation "$generation"
@@ -387,8 +392,9 @@ cmd_start() {
 
 cmd_rebuild() {
   local old="" generation
-  old=$(read_current_generation 2>/dev/null || true)
   check_docker_api_version; AWS_PROXY_MIGRATION_CHECK=true; setup_env; AWS_PROXY_MIGRATION_CHECK=false
+  auto_reap_retired
+  old=$(read_current_generation 2>/dev/null || true)
   start_generation true
   generation="$STARTED_GENERATION"
   write_current_generation "$generation"
@@ -425,6 +431,8 @@ cmd_build_image() {
 
 cmd_status() {
   check_docker_api_version
+  setup_env
+  auto_reap_retired
   local current="" generation project cid version retired sessions marker
   current=$(read_current_generation 2>/dev/null || true)
   printf '%-2s %-42s %-22s %-8s %-8s\n' '' PROJECT VERSION RETIRED SESSIONS

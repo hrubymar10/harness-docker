@@ -100,22 +100,24 @@ list_generations() {
 }
 
 _generation_session_count() {
-  local generation="$1" container_id count
+  local generation="$1" container_id count session_pid_dir
   container_id=$(generation_agent_container_id "$generation") || true
   if [[ -z "$container_id" ]]; then
     printf '0'
     return
   fi
+  session_pid_dir="${HARNESS_DOCKER_SESSION_PID_DIR:-/tmp}"
   count=$(docker exec "$container_id" sh -c '
-    set -- /tmp/*-session-*.pid
+    session_pid_dir="$1"
+    set -- "$session_pid_dir"/*-session-*.pid
     [ -e "$1" ] || { echo 0; exit 0; }
     echo "$#"
-  ' 2>/dev/null) || count=0
+  ' sh "$session_pid_dir" 2>/dev/null) || count=0
   printf '%s' "$count"
 }
 
 reap_retired_generations() {
-  local current marker generation project session_count
+  local current marker generation project session_count rc=0
   current=$(read_current_generation 2>/dev/null) || current=""
   for marker in "$_RETIRED_GENERATIONS_DIR"/*; do
     [[ -f "$marker" ]] || continue
@@ -126,7 +128,11 @@ reap_retired_generations() {
     [[ "$session_count" =~ ^[0-9]+$ ]] || session_count=0
     ((session_count == 0)) || continue
     project=$(generation_project_name "$generation") || continue
-    docker compose -p "$project" -f "$HARNESS_DOCKER_ROOT/docker-compose.yml" down
-    rm -f "$marker"
+    if docker compose -p "$project" -f "$HARNESS_DOCKER_ROOT/docker-compose.yml" down; then
+      rm -f "$marker"
+    else
+      rc=1
+    fi
   done
+  return "$rc"
 }

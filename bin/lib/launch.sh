@@ -108,6 +108,7 @@ harness_main() {
   set +e
   docker exec "${docker_flags[@]}" \
     -e "$HARNESS_SESSION_ENV=$session_id" \
+    -e "HARNESS_DOCKER_SESSION_PID_DIR=${HARNESS_DOCKER_SESSION_PID_DIR:-/tmp}" \
     -u "$docker_user" -w "$workdir" "$container_id" \
     "$HARNESS_SESSION_WRAPPER" "${launch_flags[@]}" "$@"
   exit_code=$?

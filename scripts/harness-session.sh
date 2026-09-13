@@ -19,7 +19,10 @@ eval "SESSION_ID=\${$SESSION_VAR:-}"
 
 PID_FILE=""
 if [ -n "$SESSION_ID" ]; then
-    PID_FILE="/tmp/$HARNESS-session-${SESSION_ID}.pid"
+    SESSION_PID_DIR=${HARNESS_DOCKER_SESSION_PID_DIR:-/tmp}
+    case "$SESSION_PID_DIR" in /*) ;; *) echo "HARNESS_DOCKER_SESSION_PID_DIR must be absolute" >&2; exit 64 ;; esac
+    mkdir -p "$SESSION_PID_DIR"
+    PID_FILE="$SESSION_PID_DIR/$HARNESS-session-${SESSION_ID}.pid"
     echo $$ > "$PID_FILE"
 fi
 

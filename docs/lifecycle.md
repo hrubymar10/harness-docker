@@ -30,3 +30,6 @@ path for editor integrations.
 The controller can start and stop the optional host beeper and invokes a
 configured notifier hook for lifecycle events. Notification setup is documented
 with the user-facing examples when they are added.
+
+See [Generations and rebuilds](generations.md) for the current-pointer, session
+pinning, retirement, and garbage-collection guarantees.

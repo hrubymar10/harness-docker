@@ -20,13 +20,18 @@
 # Sourced by both bash and zsh (bin/ wrappers and the user's shell function),
 # so the lib locates itself per-shell to derive the repo root for the log dir.
 if [ -n "${ZSH_VERSION:-}" ]; then
-  eval '_SESSION_CLEANUP_ROOT="${${(%):-%x}:A:h:h:h}"'
+  eval '_SESSION_CLEANUP_LIB_DIR="${${(%):-%x}:A:h}"'
 else
-  _SESSION_CLEANUP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  _SESSION_CLEANUP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
+_SESSION_CLEANUP_ROOT="$(cd "$_SESSION_CLEANUP_LIB_DIR/../.." && pwd)"
+
+_session_pid_dir() {
+  printf '%s' "${HARNESS_DOCKER_SESSION_PID_DIR:-/tmp}"
+}
 
 _session_pidfile() {
-  printf '/tmp/%s-session-%s.pid' "$HARNESS" "$1"
+  printf '%s/%s-session-%s.pid' "$(_session_pid_dir)" "$HARNESS" "$1"
 }
 
 # Host-side pidfile of the watchdog itself, so a normal session exit can stop
@@ -56,7 +61,9 @@ _container_user() {
 # left that could legitimately own background work: no session pidfiles and no
 # claude process attached to a terminal. Prints "daemon_stopped" when it acted.
 _IDLE_STOP_SNIPPET='
-ls /tmp/*-session-*.pid >/dev/null 2>&1 && exit 0
+session_pid_dir="$1"
+set -- "$session_pid_dir"/*-session-*.pid
+[ -e "$1" ] && exit 0
 ps -eo tty,args 2>/dev/null | grep "pts/" | grep -q claude && exit 0
 claude daemon stop --any >/dev/null 2>&1
 echo daemon_stopped
@@ -122,6 +129,7 @@ start_session_watchdog() {
     watchdog_pidfile="$6"
     user="$7"
     idle_stop_snippet="$8"
+    genlib="$9"
     echo $$ > "$watchdog_pidfile"
     trap "rm -f \$watchdog_pidfile" EXIT
     trap "exit 0" HUP INT TERM
@@ -146,14 +154,18 @@ start_session_watchdog() {
       log "watchdog_attempt attempt=$attempt status=$status result=${result:-none}"
       if [ "$status" -eq 0 ]; then
         log "watchdog_cleanup_succeeded attempt=$attempt"
-        stopped=$(docker exec -u "$user" "$container" sh -c "$idle_stop_snippet" 2>/dev/null)
+        stopped=$(docker exec -u "$user" "$container" sh -c "$idle_stop_snippet" sh "$(dirname "$pidfile")" 2>/dev/null)
         [ -n "$stopped" ] && log "watchdog_daemon_stopped_idle"
+        if [ -f "$genlib" ]; then
+          ( . "$genlib" && reap_retired_generations ) >/dev/null 2>&1 \
+            && log "watchdog_reaped_retired_generations" || true
+        fi
         exit 0
       fi
       sleep 0.25
     done
     log "watchdog_cleanup_gave_up pidfile=$pidfile"
-  ' "$parent_pid" "$container" "$pidfile" "$log_file" "$parent_start" "$watchdog_pidfile" "$user" "$_IDLE_STOP_SNIPPET"
+  ' "$parent_pid" "$container" "$pidfile" "$log_file" "$parent_start" "$watchdog_pidfile" "$user" "$_IDLE_STOP_SNIPPET" "$_SESSION_CLEANUP_LIB_DIR/generations.sh"
 }
 
 run_session_cleanup() {
@@ -163,6 +175,13 @@ run_session_cleanup() {
   _do_session_cleanup "$container" "$session_id" || true
   _kill_watchdog "$HARNESS" "$session_id"
   _stop_daemon_if_idle "$container" "$user"
+  # A blue-green rebuild may have retired this session's generation. Reap
+  # only after the pidfile is gone, and never let orchestration affect teardown.
+  if [ -f "$_SESSION_CLEANUP_LIB_DIR/generations.sh" ]; then
+    # shellcheck source=bin/lib/generations.sh
+    source "$_SESSION_CLEANUP_LIB_DIR/generations.sh"
+    reap_retired_generations >/dev/null 2>&1 || true
+  fi
 }
 
 _do_session_cleanup() {
@@ -194,19 +213,20 @@ _kill_watchdog() {
 }
 
 _stop_daemon_if_idle() {
-  local container="$1" user="$2" stopped
-  stopped=$(docker exec -u "$user" "$container" sh -c "$_IDLE_STOP_SNIPPET" 2>/dev/null) || true
+  local container="$1" user="$2" stopped session_pid_dir
+  session_pid_dir=$(_session_pid_dir)
+  stopped=$(docker exec -u "$user" "$container" sh -c "$_IDLE_STOP_SNIPPET" sh "$session_pid_dir" 2>/dev/null) || true
   [ -n "$stopped" ] && _session_debug_log "daemon_stopped_idle container=$container"
   return 0
 }
 
 # Sweep sessions whose host side is gone. Every session writes
-# /tmp/<harness>-session-<id>.pid inside the container, and every live host
+# <session-dir>/<harness>-session-<id>.pid inside the container, and every live host
 # client is a `docker exec` process carrying <HARNESS>_SESSION_ID=<id> on its
 # command line — a pidfile without a matching host process is an orphan whose
 # watchdog never fired.
 reap_stale_sessions() {
-  local container="$1" user pidfiles pidfile filename session_harness session_id session_env
+  local container="$1" user pidfiles pidfile filename session_harness session_id session_env session_pid_dir
   # Host-only: inside the container pgrep cannot see the host clients (the
   # session id is env there, not argv), so every session would look stale.
   if [ -f /.dockerenv ]; then
@@ -214,12 +234,13 @@ reap_stale_sessions() {
     return 0
   fi
   user=$(_container_user "${2:-}")
-  pidfiles=$(docker exec "$container" sh -c 'ls /tmp/*-session-*.pid 2>/dev/null') || true
+  session_pid_dir=$(_session_pid_dir)
+  pidfiles=$(docker exec "$container" sh -c 'ls "$1"/*-session-*.pid 2>/dev/null' sh "$session_pid_dir") || true
   # Not a for-loop: this file is sourced by both bash and zsh, and zsh does
   # not word-split unquoted expansions.
   printf '%s\n' "$pidfiles" | while IFS= read -r pidfile; do
     [ -n "$pidfile" ] || continue
-    filename="${pidfile#/tmp/}"
+    filename="${pidfile#"$session_pid_dir"/}"
     session_harness="${filename%%-session-*}"
     session_id="${filename#*-session-}"
     session_id="${session_id%.pid}"
