@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || re
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_DIR="$PROJECT_DIR/config"
 HARNESS_DOCKER_ROOT="$PROJECT_DIR"
+UPDATE_ROOT="${HARNESS_DOCKER_UPDATE_SOURCE_ROOT:-$PROJECT_DIR}"
 HARNESS_COMPOSE_PROJECT_NAME="${HARNESS_COMPOSE_PROJECT_NAME:-}"
 MIN_API_VERSION=1.44
 SSH_RELAY_PORT=19922
@@ -24,6 +25,156 @@ source "$SCRIPT_DIR/lib/session-cleanup.sh"
 die() { echo "Error: $*" >&2; exit 1; }
 cleanup_temp_overrides() { ((${#TEMP_OVERRIDES[@]} == 0)) || rm -f "${TEMP_OVERRIDES[@]}"; }
 trap cleanup_temp_overrides EXIT
+
+run_with_timeout() {
+  local seconds="$1" output="$2"
+  shift 2
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${seconds}s" "$@" > "$output" 2>/dev/null
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "${seconds}s" "$@" > "$output" 2>/dev/null
+  else
+    GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME="$seconds" "$@" > "$output" 2>/dev/null
+  fi
+}
+
+remote_default_target() {
+  local output value name ref="" oid=""
+  output=$(mktemp "${TMPDIR:-/tmp}/harness-update-check.XXXXXX")
+  if ! run_with_timeout "${HARNESS_DOCKER_UPDATE_TIMEOUT_SECONDS:-5}" "$output" \
+    env GIT_TERMINAL_PROMPT=0 git -C "$UPDATE_ROOT" ls-remote --symref "$UPDATE_REMOTE" HEAD; then
+    rm -f "$output"; return 1
+  fi
+  while read -r value name _; do
+    if [[ "$value" == ref: && "$name" == refs/heads/* ]]; then ref="$name"
+    elif [[ "$name" == HEAD && "$value" =~ ^[0-9a-fA-F]{40,64}$ ]]; then oid="$value"; fi
+  done < "$output"
+  rm -f "$output"
+  [[ -n "$ref" && -n "$oid" ]] || return 1
+  printf '%s %s\n' "$ref" "$oid"
+}
+
+classify_update() {
+  UPDATE_STATE=unreachable UPDATE_DEFAULT_REF="" UPDATE_REMOTE_OID="" UPDATE_LOCAL_OID="" UPDATE_LOCAL_VERSION="" UPDATE_BRANCH=""
+  UPDATE_LOCAL_VERSION=$(HARNESS_DOCKER_ROOT="$UPDATE_ROOT" harness_version 2>/dev/null || true)
+  if [[ -n "$(git -C "$UPDATE_ROOT" status --porcelain --untracked-files=no 2>/dev/null || true)" ]]; then
+    UPDATE_STATE=dirty; return
+  fi
+  if ! read -r UPDATE_DEFAULT_REF UPDATE_REMOTE_OID < <(remote_default_target); then return; fi
+  UPDATE_BRANCH=$(git -C "$UPDATE_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  if [[ -z "$UPDATE_BRANCH" || "refs/heads/$UPDATE_BRANCH" != "$UPDATE_DEFAULT_REF" ]]; then
+    UPDATE_STATE=non-default; return
+  fi
+  UPDATE_LOCAL_OID=$(git -C "$UPDATE_ROOT" rev-parse HEAD 2>/dev/null) || return
+  if [[ "$UPDATE_LOCAL_OID" == "$UPDATE_REMOTE_OID" ]] \
+    || { git -C "$UPDATE_ROOT" cat-file -e "$UPDATE_REMOTE_OID^{commit}" 2>/dev/null \
+      && git -C "$UPDATE_ROOT" merge-base --is-ancestor "$UPDATE_REMOTE_OID" "$UPDATE_LOCAL_OID" 2>/dev/null; }; then
+    UPDATE_STATE=current
+  else
+    UPDATE_STATE=behind
+  fi
+}
+
+update_short_oid() { printf '%.12s' "$1"; }
+
+update_skip_warning() {
+  case "$UPDATE_STATE" in
+    dirty) echo 'harness-docker update check skipped: checkout is dirty.' >&2 ;;
+    non-default)
+      echo "harness-docker update check skipped: checkout is on '${UPDATE_BRANCH:-detached}', not default branch '${UPDATE_DEFAULT_REF#refs/heads/}'." >&2
+      ;;
+  esac
+}
+
+restore_update_checkout() {
+  local original_oid="$1" original_ref="$2" moved_oid="$3" branch current_oid current_ref
+  current_oid=$(git -C "$UPDATE_ROOT" rev-parse HEAD 2>/dev/null) || return 1
+  current_ref=$(git -C "$UPDATE_ROOT" symbolic-ref --quiet HEAD 2>/dev/null || true)
+  if [[ "$current_oid" == "$original_oid" && "$current_ref" == "$original_ref" ]]; then return 0; fi
+  [[ -n "$original_ref" && -n "$moved_oid" && "$current_oid" == "$moved_oid" && "$current_ref" == "$original_ref" ]] || return 1
+  branch="${original_ref#refs/heads/}"
+  git -C "$UPDATE_ROOT" checkout --detach "$original_oid" >/dev/null 2>&1 || return 1
+  git -C "$UPDATE_ROOT" update-ref "$original_ref" "$original_oid" "$moved_oid" >/dev/null 2>&1 || return 1
+  git -C "$UPDATE_ROOT" checkout "$branch" >/dev/null 2>&1 || return 1
+  [[ "$(git -C "$UPDATE_ROOT" rev-parse HEAD 2>/dev/null)" == "$original_oid" ]]
+}
+
+update_failure() {
+  local automatic="$1" message="$2" original_oid="$3" original_ref="$4" moved_oid="$5"
+  shift 5
+  if ! restore_update_checkout "$original_oid" "$original_ref" "$moved_oid"; then
+    die 'update failed and the previous checkout could not be restored; current run aborted'
+  fi
+  if [[ "$automatic" == true ]]; then
+    echo "harness-docker automatic update failed: $message; continuing on the previous version." >&2
+    HARNESS_DOCKER_SKIP_UPDATE_CHECK=1 exec "$UPDATE_ROOT/bin/harness-docker-ctrl" "$@"
+  fi
+  die "$message; the previous checkout was restored"
+}
+
+apply_update() {
+  local automatic="$1" original_oid original_ref moved_oid="" fetched_oid
+  shift
+  original_oid=$(git -C "$UPDATE_ROOT" rev-parse HEAD) || die 'cannot resolve current checkout revision'
+  original_ref=$(git -C "$UPDATE_ROOT" symbolic-ref --quiet HEAD 2>/dev/null || true)
+  if ! run_with_timeout "${HARNESS_DOCKER_UPDATE_TIMEOUT_SECONDS:-5}" /dev/null \
+    env GIT_TERMINAL_PROMPT=0 git -C "$UPDATE_ROOT" fetch --no-tags "$UPDATE_REMOTE" "$UPDATE_DEFAULT_REF"; then
+    update_failure "$automatic" 'could not fetch the advertised default-branch tip' "$original_oid" "$original_ref" "$moved_oid" "$@"
+  fi
+  fetched_oid=$(git -C "$UPDATE_ROOT" rev-parse FETCH_HEAD 2>/dev/null || true)
+  if [[ "$fetched_oid" != "$UPDATE_REMOTE_OID" ]]; then
+    update_failure "$automatic" 'fetched tip did not match the advertised revision' "$original_oid" "$original_ref" "$moved_oid" "$@"
+  fi
+  if ! git -C "$UPDATE_ROOT" merge --ff-only "$UPDATE_REMOTE_OID" >/dev/null 2>&1; then
+    update_failure "$automatic" "cannot fast-forward ${UPDATE_BRANCH:-the default branch}" "$original_oid" "$original_ref" "$moved_oid" "$@"
+  fi
+  moved_oid=$(git -C "$UPDATE_ROOT" rev-parse HEAD)
+  echo "Updated harness-docker from $(update_short_oid "$original_oid") to $(update_short_oid "$moved_oid")."
+  if [[ "$automatic" == true ]]; then
+    HARNESS_DOCKER_SKIP_UPDATE_CHECK=1 HARNESS_DOCKER_UPDATED_FROM="$original_oid" \
+      exec "$UPDATE_ROOT/bin/harness-docker-ctrl" "$@"
+  fi
+}
+
+passive_update_check() {
+  local answer
+  classify_update
+  case "$UPDATE_STATE" in
+    current|unreachable) return ;;
+    dirty|non-default) update_skip_warning; return ;;
+  esac
+  if [[ -t 0 ]]; then
+    printf 'harness-docker update available. update now? (Y/n)' >&2
+    if IFS= read -r answer; then
+      answer="${answer#"${answer%%[![:space:]]*}"}"; answer="${answer%"${answer##*[![:space:]]}"}"
+      case "$answer" in ''|y|Y|yes|YES|Yes) apply_update true "$@" ;; esac
+    fi
+  fi
+  echo "harness-docker update available (${UPDATE_LOCAL_VERSION:-$(update_short_oid "$UPDATE_LOCAL_OID")} -> $(update_short_oid "$UPDATE_REMOTE_OID")); continuing without update." >&2
+}
+
+cmd_update() {
+  local check_only=false
+  case "${1:-}" in '') ;; --check) check_only=true ;; *) die 'usage: harness-docker-ctrl update [--check]' ;; esac
+  classify_update
+  if $check_only; then
+    case "$UPDATE_STATE" in
+      current) echo "harness-docker is current at ${UPDATE_LOCAL_VERSION:-$(update_short_oid "$UPDATE_LOCAL_OID")}." ;;
+      behind) echo "harness-docker update available: ${UPDATE_LOCAL_VERSION:-$(update_short_oid "$UPDATE_LOCAL_OID")} -> $(update_short_oid "$UPDATE_REMOTE_OID")." ;;
+      dirty) echo 'harness-docker update status: dirty checkout; check skipped.' ;;
+      non-default) echo "harness-docker update status: non-default branch '${UPDATE_BRANCH:-detached}'; check skipped." ;;
+      unreachable) echo "harness-docker update status: remote '$UPDATE_REMOTE' is unreachable." ;;
+    esac
+    return
+  fi
+  case "$UPDATE_STATE" in
+    dirty) die 'update refused: checkout is dirty' ;;
+    non-default) die "update refused: checkout is on '${UPDATE_BRANCH:-detached}', not default branch '${UPDATE_DEFAULT_REF#refs/heads/}'" ;;
+    unreachable) die "update refused: remote '$UPDATE_REMOTE' is unreachable" ;;
+    current) echo "harness-docker is already current at ${UPDATE_LOCAL_VERSION:-$(update_short_oid "$UPDATE_LOCAL_OID")}." ;;
+    behind) apply_update false ;;
+  esac
+}
 
 normalize_env_key() {
   local key="$1"
@@ -378,11 +529,39 @@ auto_reap_retired() {
   reap_retired_generations || true
 }
 
+running_image_mismatch() {
+  local generation="$1" container checkout
+  container=$(generation_agent_container_id "$generation") || return 1
+  [[ -n "$container" ]] || return 1
+  RUNNING_IMAGE_VERSION=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$container" 2>/dev/null || true)
+  checkout=$(harness_version)
+  [[ -n "$RUNNING_IMAGE_VERSION" && "$RUNNING_IMAGE_VERSION" != "$checkout" ]] || return 1
+  CHECKOUT_VERSION="$checkout"
+}
+
+offer_running_rebuild() {
+  local generation="$1" answer
+  running_image_mismatch "$generation" || return 1
+  echo "harness-docker rebuild available (running $RUNNING_IMAGE_VERSION, checkout $CHECKOUT_VERSION)." >&2
+  if [[ ! -t 0 ]]; then
+    echo 'Run harness-docker-ctrl rebuild to switch generations.' >&2
+    return 1
+  fi
+  printf 'rebuild now? (Y/n)' >&2
+  IFS= read -r answer || return 1
+  answer="${answer#"${answer%%[![:space:]]*}"}"; answer="${answer%"${answer##*[![:space:]]}"}"
+  case "$answer" in ''|y|Y|yes|YES|Yes) return 0 ;; *) return 1 ;; esac
+}
+
 cmd_start() {
   local current generation
   check_docker_api_version; AWS_PROXY_MIGRATION_CHECK=true; setup_env; AWS_PROXY_MIGRATION_CHECK=false
   auto_reap_retired
-  if current=$(read_current_generation 2>/dev/null) && [[ -n "$(generation_agent_container_id "$current")" ]]; then echo "Generation $current is already running."; return; fi
+  if current=$(read_current_generation 2>/dev/null) && [[ -n "$(generation_agent_container_id "$current")" ]]; then
+    if offer_running_rebuild "$current"; then cmd_rebuild true; return; fi
+    echo "Generation $current is already running."
+    return
+  fi
   start_generation false
   generation="$STARTED_GENERATION"
   write_current_generation "$generation"
@@ -391,10 +570,13 @@ cmd_start() {
 }
 
 cmd_rebuild() {
-  local old="" generation
+  local skip_mismatch_notice="${1:-false}" old="" generation
   check_docker_api_version; AWS_PROXY_MIGRATION_CHECK=true; setup_env; AWS_PROXY_MIGRATION_CHECK=false
   auto_reap_retired
   old=$(read_current_generation 2>/dev/null || true)
+  if [[ "$skip_mismatch_notice" != true ]] && running_image_mismatch "$old"; then
+    echo "Rebuilding for checkout $CHECKOUT_VERSION (running image: $RUNNING_IMAGE_VERSION)." >&2
+  fi
   start_generation true
   generation="$STARTED_GENERATION"
   write_current_generation "$generation"
@@ -480,14 +662,21 @@ Commands:
   beeper-start           Start the host notification beeper
   beeper-stop            Stop the host notification beeper
   version                Print the checkout version
+  update [--check]       Update from the remote default branch, or report status
   help                   Show this help
 EOF
 }
 
 LEGACY_AWS_PROXY_ENV_SOURCE=$(legacy_aws_proxy_env_vars)
 load_env_file
+UPDATE_REMOTE="${HARNESS_DOCKER_UPDATE_REMOTE:-origin}"
 HARNESS_COMPOSE_PROJECT_NAME="${HARNESS_COMPOSE_PROJECT_NAME:-${COMPOSE_PROJECT_NAME:-harness-docker}}"
 export COMPOSE_PROJECT_NAME="$HARNESS_COMPOSE_PROJECT_NAME"
+
+case "${1:-help}" in
+  update|version|help|-h|--help) ;;
+  *) [[ "${HARNESS_DOCKER_SKIP_UPDATE_CHECK:-}" == 1 ]] || passive_update_check "$@" ;;
+esac
 
 case "${1:-help}" in
   start) cmd_start ;;
@@ -502,7 +691,7 @@ case "${1:-help}" in
   beeper-start) start_beeper ;;
   beeper-stop) stop_beeper ;;
   version) harness_version ;;
-  # update is intentionally reserved for the self-update command.
+  update) shift; cmd_update "$@" ;;
   help|-h|--help) usage ;;
   *) usage >&2; exit 1 ;;
 esac

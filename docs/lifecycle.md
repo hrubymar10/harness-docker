@@ -33,3 +33,6 @@ with the user-facing examples when they are added.
 
 See [Generations and rebuilds](generations.md) for the current-pointer, session
 pinning, retirement, and garbage-collection guarantees.
+
+See [Updates](updates.md) for the default-branch eligibility and fast-forward
+workflow.
