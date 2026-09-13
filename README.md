@@ -10,6 +10,15 @@ shared image contains four supported harnesses:
 | pi | [pi](docs/pi.md) |
 | Mistral Vibe | [Mistral Vibe](docs/vibe.md) |
 
+Copy `config/docker-compose.local.example.yml` to
+`config/docker-compose.local.yml`, add only
+the project mounts the sandbox should see, provide the required host-path and
+identity variables, then run:
+
+```bash
+docker compose up -d --build
+```
+
 ## Documentation
 
 - [Setup and host integration](docs/setup.md)

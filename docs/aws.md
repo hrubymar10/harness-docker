@@ -15,3 +15,8 @@ a substitute for least-privilege AWS policy.
 
 The shared image includes AWS CLI so generated profiles can be used directly by
 tools inside the sandbox.
+
+Compose forwards `AWS_AI_PROXY_ENABLED`, `AWS_AI_PROXY_URL`, and
+`AWS_AI_PROXY_PROFILE_CONFIG` to the harness. Set the enabled flag only when the
+host service is running and reachable from `host.docker.internal`; the default
+URL uses port 9998.

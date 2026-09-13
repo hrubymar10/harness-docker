@@ -31,3 +31,22 @@ reproducible; empty harness-version values select the upstream current release.
 
 Extra package lists execute during image build and are trusted inputs. Review
 them as dependency changes before enabling them.
+
+## Compose configuration
+
+`docker-compose.yml` defines three cooperating services: the harness, the
+request-validating filter proxy, and the method/path-limiting socket proxy. The
+harness receives the host UID, login name, home path, shell, Git identity,
+provider tokens, Go settings, and harness state paths through environment
+variables.
+
+Copy `config/docker-compose.local.example.yml` to
+`config/docker-compose.local.yml` and mount
+only the project roots needed for work. Keep the same absolute paths inside and
+outside the container so editors, Git, Compose, and debuggers agree. Local
+overrides may also add resources or GPU access without changing the shared file.
+
+The Compose stack mounts harness state read-write, `gpg-keys/` and custom tools
+read-only, and the Docker socket only into the socket proxy. Use the memory-limit
+setting where desired. Docker Desktop and Docker Engine reach host helpers via
+`host.docker.internal` and the configured host-gateway mapping.

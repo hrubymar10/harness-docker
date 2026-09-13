@@ -34,3 +34,16 @@ development workflows. It also installs package managers and language tooling
 that can download and execute code. These are intentional usability choices,
 not containment guarantees; review image pins and additions as trusted supply
 chain inputs.
+
+## Docker access
+
+Compose places two services between the harness and the host daemon. The filter
+proxy validates canonical request paths and unsafe create options. The upstream
+socket proxy then restricts methods, routes, and direct bind sources before the
+request reaches the read-only-mounted host socket. The harness receives only the
+filtered TCP endpoint.
+
+Configured project roots and harness state are still visible read-write inside
+the sandbox. Git/provider credentials passed through environment variables are
+also visible to sandbox processes. Keep local mounts narrow and do not use this
+stack for hostile-code isolation.
