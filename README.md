@@ -6,6 +6,8 @@ scaffolding used by the image and launchers added in later commits.
 
 ## Documentation
 
+- [Setup and host integration](docs/setup.md)
+- [AWS credential proxy](docs/aws.md)
 - [Development](docs/development.md)
 - [Security model](docs/security.md)
 
