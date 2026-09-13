@@ -9,4 +9,9 @@ Claude state is expected under `~/.claude` or `CLAUDE_CONFIG_DIR`. Authenticate
 on the host before mounting that state. Because sandbox processes can read and
 modify it, use a dedicated account or limited credentials when appropriate.
 
-Launcher and editor commands are documented when the host launchers are added.
+Run `claude-docker`; arguments are forwarded after the launcher's
+`--dangerously-skip-permissions` flag. For VS Code, configure the absolute path
+to `claude-docker-vscode-wrapper` as `claudeCode.claudeProcessWrapper` and set
+`claudeCode.useTerminal` to `false`, because terminal mode bypasses the wrapper.
+The launcher exports `CLAUDE_SESSION_ID` and uses the mounted
+`CLAUDE_CONFIG_DIR`.

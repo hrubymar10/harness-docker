@@ -5,10 +5,10 @@ shared image contains four supported harnesses:
 
 | Harness | Documentation |
 | --- | --- |
-| Claude Code | [Claude Code](docs/claude-code.md) |
-| Codex CLI | [Codex](docs/codex.md) |
-| pi | [pi](docs/pi.md) |
-| Mistral Vibe | [Mistral Vibe](docs/vibe.md) |
+| Claude Code | `claude-docker` · [Claude Code](docs/claude-code.md) |
+| Codex CLI | `codex-docker` · [Codex](docs/codex.md) |
+| pi | `pi-docker` · [pi](docs/pi.md) |
+| Mistral Vibe | `vibe-docker` · [Mistral Vibe](docs/vibe.md) |
 
 Copy `config/docker-compose.local.example.yml` to
 `config/docker-compose.local.yml`, add only
@@ -27,6 +27,7 @@ docker compose up -d --build
 - [Codex](docs/codex.md)
 - [pi](docs/pi.md)
 - [Mistral Vibe](docs/vibe.md)
+- [Session lifecycle](docs/lifecycle.md)
 - [Development](docs/development.md)
 - [Security model](docs/security.md)
 

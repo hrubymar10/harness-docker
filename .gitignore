@@ -7,6 +7,9 @@ config/*-notifier
 config/logs/
 config/custom-bin/*
 !config/custom-bin/.gitkeep
+config/.current-generation
+config/.current-generation.tmp.*
+config/.retired-generations/
 
 gpg-keys/*
 !gpg-keys/.gitkeep

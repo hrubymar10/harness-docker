@@ -8,4 +8,8 @@ Codex state defaults to `~/.codex` through `CODEX_HOME`. Authenticate on the hos
 with `codex login` or provide `OPENAI_API_KEY`, then mount only the state and
 projects the sandbox may access.
 
-Launcher and editor commands are documented when the host launchers are added.
+Run `codex-docker`; arguments are forwarded after
+`--dangerously-bypass-approvals-and-sandbox`. For VS Code, set
+`chatgpt.cliExecutable` to the absolute path of
+`codex-docker-vscode-wrapper`. The launcher exports `CODEX_SESSION_ID` and uses
+the mounted `CODEX_HOME`.
