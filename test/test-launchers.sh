@@ -26,18 +26,24 @@ chmod +x "$TMP/bin/docker"
 export PATH="$TMP/bin:$PATH" LOG="$TMP/log" MOUNT="$TMP/work" HARNESS_DOCKER_SKIP_UPDATE_CHECK=1 HARNESS_DOCKER_USER=tester
 # shellcheck disable=SC1091
 source "$ROOT/bin/lib/harness.sh"
-for harness in claude codex pi vibe; do
+for harness in claude codex pi vibe opencode; do
   case "$harness" in
     claude) expected_env=CLAUDE_SESSION_ID; expected_wrapper=claude-session; expected_flags='--dangerously-skip-permissions' ;;
     codex) expected_env=CODEX_SESSION_ID; expected_wrapper=codex-session; expected_flags='--dangerously-bypass-approvals-and-sandbox' ;;
     pi) expected_env=PI_SESSION_ID; expected_wrapper=pi-session; expected_flags='' ;;
     vibe) expected_env=VIBE_SESSION_ID; expected_wrapper=vibe-session; expected_flags='--yolo' ;;
+    opencode) expected_env=OPENCODE_SESSION_ID; expected_wrapper=opencode-session; expected_flags='--auto' ;;
   esac
   : > "$LOG"
   (cd "$TMP/work/project"; "$ROOT/bin/$harness-docker" --version > "$TMP/out")
   load_harness_spec "$harness"
   [[ "$HARNESS_SESSION_ENV" == "$expected_env" && "$HARNESS_SESSION_WRAPPER" == "$expected_wrapper" ]]
   [[ "${HARNESS_LAUNCH_FLAGS[*]}" == "$expected_flags" ]]
+  [[ "${#HARNESS_STATE_DIR_ENVS[@]}" == "${#HARNESS_STATE_DIR_SUFFIXES[@]}" ]]
+  if [[ "$harness" == opencode ]]; then
+    [[ "${HARNESS_STATE_DIR_ENVS[*]}" == 'OPENCODE_CONFIG_DIR XDG_DATA_HOME' ]]
+    [[ "${HARNESS_STATE_DIR_SUFFIXES[*]}" == ' opencode' ]]
+  fi
   [[ "$(HARNESS_DOCKER_ROOT="$ROOT" bash -c 'source "$HARNESS_DOCKER_ROOT/bin/lib/harness.sh"; harness_from_launcher "$0"' "$ROOT/bin/$harness-docker")" == "$harness" ]]
   grep -q '^harness-mock$' "$TMP/out"
   grep -Eq "exec -i .*${HARNESS_SESSION_ENV}=.* -e HARNESS_DOCKER_SESSION_PID_DIR=/tmp -u tester -w .*/work/project cid-pinned ${HARNESS_SESSION_WRAPPER}" "$LOG"

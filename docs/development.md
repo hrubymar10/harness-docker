@@ -23,7 +23,8 @@ reports a skip when no generation is running; that is expected in an otherwise
 green host-only run.
 
 The test helpers exercise the same harness table and shared paths used in
-production so one harness cannot silently drift. Image and Compose changes must
+production so one harness cannot silently drift. Coverage includes all five
+launcher and editor-wrapper variants. Image and Compose changes must
 also keep the render and smoke assertions green. Keep host utilities small and
 direct, preserve security defaults in tests, and never commit a red tree.
 

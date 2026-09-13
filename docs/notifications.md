@@ -12,8 +12,8 @@ harness-docker-ctrl beeper-stop
 
 Compose mounts `config/harness-notifier` at the shared notifier path, and the
 image exposes it through harness-specific names (`claude-notifier`,
-`codex-notifier`, `pi-notifier`, and `vibe-notifier`). The script receives a
-notification category and sends the request to
+`codex-notifier`, `pi-notifier`, `vibe-notifier`, and `opencode-notifier`). The
+script receives a notification category and sends the request to
 `http://host.docker.internal:9999/beep` by default.
 
 `BEEPER_BIND` controls the listening address. `BEEPER_ALLOW` is a comma-separated

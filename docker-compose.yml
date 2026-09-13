@@ -55,12 +55,15 @@ services:
         CODEX_VERSION: ${CODEX_VERSION:-}
         PI_VERSION: ${PI_VERSION:-}
         VIBE_VERSION: ${VIBE_VERSION:-}
+        OPENCODE_VERSION: ${OPENCODE_VERSION:-}
         VERSION: ${VERSION:-}
     volumes:
       - ${CLAUDE_CONFIG_DIR_HOST}:${CLAUDE_CONFIG_DIR_HOST}
       - ${CODEX_HOME_HOST}:${CODEX_HOME_HOST}
       - ${PI_CODING_AGENT_DIR_HOST}:${PI_CODING_AGENT_DIR_HOST}
       - ${VIBE_HOME_HOST}:${VIBE_HOME_HOST}
+      - ${OPENCODE_CONFIG_DIR_HOST}:${OPENCODE_CONFIG_DIR_HOST}
+      - ${OPENCODE_DATA_DIR_HOST}:${OPENCODE_DATA_DIR_HOST}
       - ${GOPATH}/pkg:${HOST_HOME}/go/pkg
       - ./gpg-keys:/run/gpg-keys:ro
       - ./config/harness-notifier:/usr/local/bin/harness-notifier:ro
@@ -85,6 +88,7 @@ services:
       CLAUDE_CONFIG_DIR: ${CLAUDE_CONFIG_DIR_HOST}
       CODEX_HOME: ${CODEX_HOME_HOST}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PI_CODING_AGENT_DIR: ${PI_CODING_AGENT_DIR_HOST}
       PI_PACKAGE_DIR: ${PI_PACKAGE_DIR:-}
       VIBE_HOME: ${VIBE_HOME_HOST}

@@ -10,7 +10,7 @@ stdin/stdout stream-safe. Arguments after the launcher are forwarded to the
 harness, and session PID bookkeeping is removed on normal exit or signals.
 
 The launchers are `claude-docker`, `codex-docker`, `pi-docker`, and
-`vibe-docker`. Matching `*-docker-vscode-wrapper` commands provide an executable
+`vibe-docker`, and `opencode-docker`. Matching `*-docker-vscode-wrapper` commands provide an executable
 path for editor integrations.
 
 ## Controller
@@ -23,7 +23,7 @@ path for editor integrations.
   before starting fresh;
 - `status` reports generation state and live session counts;
 - `shell` opens the configured container shell at the mirrored working path;
-- `exec <claude|codex|pi|vibe> [args...]` invokes a supported launcher;
+- `exec <claude|codex|pi|vibe|opencode> [args...]` invokes a supported launcher;
 - `rebuild` builds, starts, health-checks, and switches to a replacement; and
 - `gc` removes retired generations only when they have no live session PIDs.
 

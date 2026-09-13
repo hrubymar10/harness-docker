@@ -237,10 +237,21 @@ BANNER
   export CODEX_HOME_HOST="${CODEX_HOME:-$HOME/.codex}"
   export PI_CODING_AGENT_DIR_HOST="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
   export VIBE_HOME_HOST="${VIBE_HOME:-$HOME/.vibe}"
+  if [[ -n "${OPENCODE_CONFIG_DIR:-}" ]]; then
+    OPENCODE_CONFIG_DIR_HOST="$OPENCODE_CONFIG_DIR"
+  else
+    [[ -z "${XDG_CONFIG_HOME:-}" || "$XDG_CONFIG_HOME" == /* ]] || die "XDG_CONFIG_HOME must be an absolute path: $XDG_CONFIG_HOME"
+    OPENCODE_CONFIG_DIR_HOST="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+  fi
+  [[ -z "${XDG_DATA_HOME:-}" || "$XDG_DATA_HOME" == /* ]] || die "XDG_DATA_HOME must be an absolute path: $XDG_DATA_HOME"
+  OPENCODE_DATA_DIR_HOST="${XDG_DATA_HOME:-$HOME/.local/share}/opencode"
+  export OPENCODE_CONFIG_DIR_HOST OPENCODE_DATA_DIR_HOST
   require_absolute_dir CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR_HOST"
   require_absolute_dir CODEX_HOME "$CODEX_HOME_HOST"
   require_absolute_dir PI_CODING_AGENT_DIR "$PI_CODING_AGENT_DIR_HOST"
   require_absolute_dir VIBE_HOME "$VIBE_HOME_HOST"
+  require_absolute_dir OPENCODE_CONFIG_DIR "$OPENCODE_CONFIG_DIR_HOST"
+  require_absolute_dir OPENCODE_DATA_DIR "$OPENCODE_DATA_DIR_HOST"
   if [[ -n "${PI_PACKAGE_DIR:-}" ]]; then
     require_absolute_dir PI_PACKAGE_DIR "$PI_PACKAGE_DIR"
     export PI_PACKAGE_DIR
@@ -417,6 +428,15 @@ configure_compose() {
   done
   [[ ! -f "$HOME/.ssh/known_hosts" ]] || add_override ssh $'services:\n  harness:\n    volumes:\n      - '"$HOME/.ssh/known_hosts:$HOST_HOME/.ssh/known_hosts:ro"
   [[ ! -d "$HOME/.agents" ]] || add_override agents $'services:\n  harness:\n    volumes:\n      - '"$HOME/.agents:$HOST_HOME/.agents"
+  local opencode_env=$'services:\n  harness:\n    environment:' variable
+  local opencode_env_count=0
+  for variable in OPENCODE_CONFIG_DIR XDG_CONFIG_HOME XDG_DATA_HOME; do
+    if [[ -n "${!variable:-}" ]]; then
+      opencode_env+=$'\n      - '"$variable"
+      ((opencode_env_count++)) || true
+    fi
+  done
+  ((opencode_env_count == 0)) || add_override opencode-env "$opencode_env"
   if [[ -n "${DOCKER_GPU:-}" ]]; then
     if [[ "$DOCKER_GPU" == all ]]; then yaml=$'services:\n  harness:\n    deploy:\n      resources:\n        reservations:\n          devices:\n            - driver: nvidia\n              count: all\n              capabilities: [gpu]'
     else yaml=$'services:\n  harness:\n    deploy:\n      resources:\n        reservations:\n          devices:\n            - driver: nvidia\n              device_ids: ['"'$DOCKER_GPU'"$']\n              capabilities: [gpu]'; fi
@@ -667,7 +687,7 @@ cmd_shell() {
 }
 cmd_exec() {
   local harness="${1:-}"; shift || true
-  case "$harness" in claude|codex|pi|vibe) exec "$SCRIPT_DIR/$harness-docker" "$@" ;; *) die 'usage: harness-docker-ctrl exec <claude|codex|pi|vibe> [args...]' ;; esac
+  case "$harness" in claude|codex|pi|vibe|opencode) exec "$SCRIPT_DIR/$harness-docker" "$@" ;; *) die 'usage: harness-docker-ctrl exec <claude|codex|pi|vibe|opencode> [args...]' ;; esac
 }
 
 usage() {
@@ -680,7 +700,7 @@ Commands:
   restart               Stop all generations and start a new one
   status                Show generation state and live session counts
   shell                 Open a shell in the current generation
-  exec <harness> [...]  Run claude, codex, pi, or vibe
+  exec <harness> [...]  Run claude, codex, pi, vibe, or opencode
   rebuild               Build and atomically switch to a new generation
   build-image           Build the image without starting a generation
   gc                    Reap idle retired generations

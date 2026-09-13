@@ -32,10 +32,13 @@ The controller creates missing state directories. Defaults and overrides are:
 | Codex CLI | `~/.codex` | `CODEX_HOME` |
 | pi | `~/.pi/agent` | `PI_CODING_AGENT_DIR` |
 | Mistral Vibe | `~/.vibe` | `VIBE_HOME` |
+| OpenCode config | `~/.config/opencode` | `OPENCODE_CONFIG_DIR` or `XDG_CONFIG_HOME` |
+| OpenCode auth/data | `~/.local/share/opencode` | `XDG_DATA_HOME` |
 
 Authenticate only the harnesses you use on the host: run `claude`, `codex
 login`, pi or Vibe's `/login` flow, or provide the relevant provider API key.
-Unused harness directories may remain empty. GitHub/GitLab CLI tokens, Git
+OpenCode authenticates with `opencode auth login` or provider keys. Unused
+harness directories may remain empty. GitHub/GitLab CLI tokens, Git
 identity, Go settings, UID, home, and shell are detected where possible.
 
 Claude's legacy single-file configuration cannot be updated safely through a
@@ -43,16 +46,18 @@ Docker Desktop file bind. Quit Claude processes, move `~/.claude.json` to
 `~/.claude/.claude.json`, and persist
 `CLAUDE_CONFIG_DIR="$HOME/.claude"`. Startup refuses the unsafe legacy layout.
 `PI_PACKAGE_DIR` may select a separate pi package directory. Every configured
-path must be absolute.
+path must be absolute. OpenCode follows its XDG defaults without modifying the
+container-wide XDG environment; only customized XDG variables are forwarded.
 
 ## Building the image
 
 The Alpine-based image installs Docker tooling, Git, GitHub and GitLab CLIs,
 AWS CLI, Go, Node.js tooling, Python tooling, debuggers, language servers, and
-the four supported harnesses. Build arguments include `GO_VERSION`,
-`CC_VERSION`, `CODEX_VERSION`, `PI_VERSION`, `VIBE_VERSION`, and extra Alpine,
-npm, Go, and Python package lists. Pinning a harness version makes builds
-reproducible; empty harness-version values select the upstream current release.
+the five supported harnesses. Build arguments include `GO_VERSION`,
+`CC_VERSION`, `CODEX_VERSION`, `PI_VERSION`, `VIBE_VERSION`,
+`OPENCODE_VERSION`, and extra Alpine, npm, Go, and Python package lists. Pinning
+a harness version makes builds reproducible; empty harness-version values select
+the upstream current release.
 
 Extra package lists execute during image build and are trusted inputs. Review
 them as dependency changes before enabling them.

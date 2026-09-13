@@ -59,6 +59,8 @@ stack for hostile-code isolation.
 - Network egress is unrestricted.
 - Harness extensions, packages, plugins, skills, prompts, and local instruction
   files are trusted code or trusted input.
+- OpenCode configuration and data directories are both mounted read-write and
+  can contain provider authentication as well as session data.
 - The notification server's bundled sound playback is macOS-specific unless its
   player is replaced.
 

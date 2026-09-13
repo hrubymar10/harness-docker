@@ -56,7 +56,7 @@ Prefer small, direct shell scripts over heavy abstractions. Keep harness-specifi
 
 - `README.md` — overview, supported-harness list, quick start, and topic index.
 - `docs/setup.md` — prerequisites, host integration, state, mounts, and image setup.
-- `docs/claude-code.md`, `docs/codex.md`, `docs/pi.md`, `docs/vibe.md` — harness-specific setup, launchers, flags, state, and editor integration.
+- `docs/claude-code.md`, `docs/codex.md`, `docs/pi.md`, `docs/vibe.md`, `docs/opencode.md` — harness-specific setup, launchers, flags, state, and editor integration.
 - `docs/lifecycle.md` — launch and controller commands.
 - `docs/generations.md` — rebuild, handoff, retirement, and garbage collection.
 - `docs/updates.md` — default-branch checks and fast-forward updates.

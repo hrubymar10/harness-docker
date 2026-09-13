@@ -17,7 +17,7 @@ warn_sandbox_image_tag() {
     repository=${repository%:*}
   fi
   case "$repository" in
-    claude-docker|codex-docker|pi-docker|vibe-docker)
+    claude-docker|codex-docker|pi-docker|vibe-docker|opencode-docker)
       echo "WARNING: building tag '$ref' overwrites a sandbox's own image; the next session may run what you build" >&2
       ;;
   esac

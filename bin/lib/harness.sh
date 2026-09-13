@@ -13,7 +13,7 @@ harness_from_launcher() {
   launcher=${launcher%-vscode-wrapper}
   launcher=${launcher%-docker}
   case "$launcher" in
-    claude|codex|pi|vibe) printf '%s' "$launcher" ;;
+    claude|codex|pi|vibe|opencode) printf '%s' "$launcher" ;;
     *) return 1 ;;
   esac
 }
@@ -27,7 +27,8 @@ load_harness_spec() {
       HARNESS_SESSION_WRAPPER=claude-session
       HARNESS_LAUNCH_FLAGS=(--dangerously-skip-permissions)
       HARNESS_NOTIFIER=claude-notifier
-      HARNESS_CONFIG_DIR_ENV=CLAUDE_CONFIG_DIR
+      HARNESS_STATE_DIR_ENVS=(CLAUDE_CONFIG_DIR)
+      HARNESS_STATE_DIR_SUFFIXES=('')
       ;;
     codex)
       HARNESS_BINARY=codex
@@ -35,7 +36,8 @@ load_harness_spec() {
       HARNESS_SESSION_WRAPPER=codex-session
       HARNESS_LAUNCH_FLAGS=(--dangerously-bypass-approvals-and-sandbox)
       HARNESS_NOTIFIER=codex-notifier
-      HARNESS_CONFIG_DIR_ENV=CODEX_HOME
+      HARNESS_STATE_DIR_ENVS=(CODEX_HOME)
+      HARNESS_STATE_DIR_SUFFIXES=('')
       ;;
     pi)
       HARNESS_BINARY=pi
@@ -43,7 +45,8 @@ load_harness_spec() {
       HARNESS_SESSION_WRAPPER=pi-session
       HARNESS_LAUNCH_FLAGS=()
       HARNESS_NOTIFIER=pi-notifier
-      HARNESS_CONFIG_DIR_ENV=PI_CODING_AGENT_DIR
+      HARNESS_STATE_DIR_ENVS=(PI_CODING_AGENT_DIR)
+      HARNESS_STATE_DIR_SUFFIXES=('')
       ;;
     vibe)
       HARNESS_BINARY=vibe
@@ -51,7 +54,17 @@ load_harness_spec() {
       HARNESS_SESSION_WRAPPER=vibe-session
       HARNESS_LAUNCH_FLAGS=(--yolo)
       HARNESS_NOTIFIER=vibe-notifier
-      HARNESS_CONFIG_DIR_ENV=VIBE_HOME
+      HARNESS_STATE_DIR_ENVS=(VIBE_HOME)
+      HARNESS_STATE_DIR_SUFFIXES=('')
+      ;;
+    opencode)
+      HARNESS_BINARY=opencode
+      HARNESS_SESSION_ENV=OPENCODE_SESSION_ID
+      HARNESS_SESSION_WRAPPER=opencode-session
+      HARNESS_LAUNCH_FLAGS=(--auto)
+      HARNESS_NOTIFIER=opencode-notifier
+      HARNESS_STATE_DIR_ENVS=(OPENCODE_CONFIG_DIR XDG_DATA_HOME)
+      HARNESS_STATE_DIR_SUFFIXES=('' opencode)
       ;;
     *)
       echo "Error: unsupported harness '$HARNESS'." >&2

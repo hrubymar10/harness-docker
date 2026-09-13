@@ -107,6 +107,16 @@ ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 
 # CLI installs are ordered from least- to most-frequently pinned for caching.
 
+# ── opencode-ai (MIT) ───────────────────────────────────────────
+ARG OPENCODE_VERSION=""
+RUN if [ -n "$OPENCODE_VERSION" ]; then \
+      npm install -g "opencode-ai@${OPENCODE_VERSION}"; \
+    else \
+      npm install -g opencode-ai; \
+    fi \
+    && opencode --version
+ENV OPENCODE_DISABLE_AUTOUPDATE=1
+
 # ── Mistral Vibe ────────────────────────────────────────────────
 ARG VIBE_VERSION=""
 ENV UV_TOOL_DIR=/opt/uv-tools
@@ -153,6 +163,7 @@ RUN touch /this-is-claude-docker-env \
           /this-is-codex-docker-env \
           /this-is-pi-docker-env \
           /this-is-vibe-docker-env \
+          /this-is-opencode-docker-env \
           /this-is-harness-docker-env
 
 # ── Security wrappers (replace real binaries) ─────────────────────
@@ -171,10 +182,12 @@ RUN chmod +x /usr/bin/git /usr/bin/docker /usr/local/bin/entrypoint.sh \
     && ln -sf harness-session /usr/local/bin/codex-session \
     && ln -sf harness-session /usr/local/bin/pi-session \
     && ln -sf harness-session /usr/local/bin/vibe-session \
+    && ln -sf harness-session /usr/local/bin/opencode-session \
     && ln -sf /usr/local/bin/harness-notifier /usr/local/bin/claude-notifier \
     && ln -sf /usr/local/bin/harness-notifier /usr/local/bin/codex-notifier \
     && ln -sf /usr/local/bin/harness-notifier /usr/local/bin/pi-notifier \
-    && ln -sf /usr/local/bin/harness-notifier /usr/local/bin/vibe-notifier
+    && ln -sf /usr/local/bin/harness-notifier /usr/local/bin/vibe-notifier \
+    && ln -sf /usr/local/bin/harness-notifier /usr/local/bin/opencode-notifier
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["sleep", "infinity"]

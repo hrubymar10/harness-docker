@@ -7,7 +7,7 @@ SESSION_COMMAND=$(basename "$0")
 HARNESS=${SESSION_COMMAND%-session}
 
 case "$HARNESS" in
-    claude|codex|pi|vibe) ;;
+    claude|codex|pi|vibe|opencode) ;;
     *)
         echo "Unsupported session command: $SESSION_COMMAND" >&2
         exit 64

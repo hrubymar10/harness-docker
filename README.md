@@ -1,8 +1,9 @@
 # harness-docker
 
-Run Claude Code, Codex CLI, pi, and Mistral Vibe in one shared Docker sandbox.
-Host paths, user identity, shell, Git configuration, and normal Docker Compose
-workflows are mirrored closely enough that each harness still feels native.
+Run Claude Code, Codex CLI, pi, Mistral Vibe, and OpenCode in one shared Docker
+sandbox. Host paths, user identity, shell, Git configuration, and normal Docker
+Compose workflows are mirrored closely enough that each harness still feels
+native.
 
 This is an opinionated daily-driver safety net for bad prompts, not bad actors.
 It reduces accidental damage without claiming to contain deliberately hostile
@@ -18,6 +19,7 @@ isolation is required. See [Security](docs/security.md) and
 | Codex CLI | `codex-docker` | [Codex](docs/codex.md) |
 | pi | `pi-docker` | [pi](docs/pi.md) |
 | Mistral Vibe | `vibe-docker` | [Mistral Vibe](docs/vibe.md) |
+| OpenCode | `opencode-docker` | [OpenCode](docs/opencode.md) |
 
 ## Quick start
 
@@ -42,7 +44,8 @@ shared lifecycle operations. Read [Setup](docs/setup.md) before first use.
 
 - [Setup and host integration](docs/setup.md)
 - Harnesses: [Claude Code](docs/claude-code.md), [Codex](docs/codex.md),
-  [pi](docs/pi.md), and [Mistral Vibe](docs/vibe.md)
+  [pi](docs/pi.md), [Mistral Vibe](docs/vibe.md), and
+  [OpenCode](docs/opencode.md)
 - [Session lifecycle](docs/lifecycle.md)
 - [Generations and zero-downtime rebuilds](docs/generations.md)
 - [Updates](docs/updates.md)

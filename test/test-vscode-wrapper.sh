@@ -6,7 +6,7 @@ restore() { if [[ -n "$POINTER_BACKUP" ]]; then cp "$POINTER_BACKUP" "$POINTER";
 trap restore EXIT
 if [[ -f "$POINTER" ]]; then POINTER_BACKUP="$TMP/current-generation.bak"; cp "$POINTER" "$POINTER_BACKUP"; fi
 mkdir -p "$TMP/bin"
-for harness in codex pi vibe; do
+for harness in codex pi vibe opencode; do
   cp "$ROOT/bin/$harness-docker-vscode-wrapper" "$TMP/bin/"
   cat > "$TMP/bin/$harness-docker" <<'EOF'
 #!/bin/bash

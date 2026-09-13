@@ -72,6 +72,7 @@ The following host directories are mounted read-write when configured:
 - `CODEX_HOME`, normally `~/.codex`
 - `PI_CODING_AGENT_DIR`, normally `~/.pi/agent`, plus optional `PI_PACKAGE_DIR`
 - `VIBE_HOME`, normally `~/.vibe`
+- OpenCode configuration, normally `~/.config/opencode`, and auth/data, normally `~/.local/share/opencode`
 
 They may contain authentication, configuration, sessions, history, prompts, skills, extensions, packages, themes, trusted-folder state, or model definitions.
 
@@ -117,7 +118,7 @@ The wrapped Docker CLI permits useful debugging commands including `docker inspe
 
 **Severity:** Medium
 
-The Claude and Codex launchers use their non-interactive permission-bypass flags, and the Vibe launcher uses its autonomous mode flag. The outer container is intended to be the primary accident boundary, but these flags reduce defense in depth within the harness itself.
+The Claude and Codex launchers use their non-interactive permission-bypass flags, the Vibe launcher uses its autonomous mode flag, and OpenCode uses automatic approval. The outer container is intended to be the primary accident boundary, but these flags reduce defense in depth within the harness itself.
 
 Do not rely on an individual harness's approval UI to protect mounted paths.
 
@@ -127,7 +128,7 @@ Do not rely on an individual harness's approval UI to protect mounted paths.
 
 **Severity:** Medium
 
-Installed pi or Vibe packages and extensions may execute code. Skills, prompts, repository instructions, hooks, and model/provider configuration for any harness can change agent behavior. Claude hooks can also invoke host-reachable notification services.
+Installed pi or Vibe packages and OpenCode plugins may execute code. Skills, prompts, repository instructions, hooks, and model/provider configuration for any harness can change agent behavior. Claude hooks can also invoke host-reachable notification services.
 
 Review third-party packages and instruction files, and treat them as trusted code or trusted input.
 

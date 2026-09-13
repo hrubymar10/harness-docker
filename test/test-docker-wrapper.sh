@@ -51,11 +51,12 @@ warning_cases=(
   'build -t codex-docker:test .'
   'buildx build --tag=pi-docker:test .'
   'buildx build -tvibe-docker:test .'
+  'build --tag opencode-docker:test .'
 )
 for command_line in "${warning_cases[@]}"; do
   read -r -a args <<< "$command_line"
   "$WRAPPER" "${args[@]}" 2> "$TMP_ROOT/warning.err"
-  image_name=$(printf '%s\n' "$command_line" | grep -oE '(claude|codex|pi|vibe)-docker')
+  image_name=$(printf '%s\n' "$command_line" | grep -oE '(claude|codex|pi|vibe|opencode)-docker')
   if grep -Fq "overwrites a sandbox's own image" "$TMP_ROOT/warning.err" \
     && grep -Fq "$image_name" "$TMP_ROOT/warning.err"; then
     ok "warns and proceeds for $image_name"

@@ -32,23 +32,27 @@ x-excludes:
   - $home/projects/.env
   - $home/projects/secrets
 EOF
-env "${common[@]}" HOME="$home" HOST_HOME="$home" CLAUDE_CONFIG_DIR="$home/.claude-custom" CODEX_HOME="$home/.codex-custom" PI_CODING_AGENT_DIR="$home/.pi/custom" PI_PACKAGE_DIR="$home/.pi/packages" VIBE_HOME="$home/.vibe-custom" DOCKER_GPU=all "$ROOT/bin/harness-docker-ctrl" build-image >/dev/null
-for d in "$home/.claude-custom" "$home/.codex-custom" "$home/.pi/custom" "$home/.pi/packages" "$home/.vibe-custom"; do [[ -d "$d" ]]; done
+env "${common[@]}" HOME="$home" HOST_HOME="$home" CLAUDE_CONFIG_DIR="$home/.claude-custom" CODEX_HOME="$home/.codex-custom" PI_CODING_AGENT_DIR="$home/.pi/custom" PI_PACKAGE_DIR="$home/.pi/packages" VIBE_HOME="$home/.vibe-custom" OPENCODE_CONFIG_DIR="$home/.opencode-custom" XDG_CONFIG_HOME="$home/.config-custom" XDG_DATA_HOME="$home/.data-custom" DOCKER_GPU=all "$ROOT/bin/harness-docker-ctrl" build-image >/dev/null
+for d in "$home/.claude-custom" "$home/.codex-custom" "$home/.pi/custom" "$home/.pi/packages" "$home/.vibe-custom" "$home/.opencode-custom" "$home/.data-custom/opencode"; do [[ -d "$d" ]]; done
 grep -Fq 'count: all' "$MOCK_LOG"; grep -Fq "/dev/null:$home/projects/.env:ro" "$MOCK_LOG"; grep -Fq "$home/projects/secrets:ro,size=0" "$MOCK_LOG"
+for variable in OPENCODE_CONFIG_DIR XDG_CONFIG_HOME XDG_DATA_HOME; do grep -Fq -- "- $variable" "$MOCK_LOG"; done
 
 default_home="$TMP/default"; mkdir -p "$default_home"
-env -u CLAUDE_CONFIG_DIR -u CODEX_HOME -u PI_CODING_AGENT_DIR -u PI_PACKAGE_DIR -u VIBE_HOME \
+env -u CLAUDE_CONFIG_DIR -u CODEX_HOME -u PI_CODING_AGENT_DIR -u PI_PACKAGE_DIR -u VIBE_HOME -u OPENCODE_CONFIG_DIR -u XDG_CONFIG_HOME -u XDG_DATA_HOME \
   "${common[@]}" HOME="$default_home" HOST_HOME="$default_home" "$ROOT/bin/harness-docker-ctrl" build-image > "$TMP/default.out" 2>&1
-[[ -d "$default_home/.claude" && -d "$default_home/.codex" && -d "$default_home/.pi/agent" && -d "$default_home/.vibe" ]]
+[[ -d "$default_home/.claude" && -d "$default_home/.codex" && -d "$default_home/.pi/agent" && -d "$default_home/.vibe" && -d "$default_home/.config/opencode" && -d "$default_home/.local/share/opencode" ]]
 grep -Fq 'CLAUDE_CONFIG_DIR was not set' "$TMP/default.out"
 
 refuse_home="$TMP/refuse"; mkdir -p "$refuse_home"; touch "$refuse_home/.claude.json"
-if env -u CLAUDE_CONFIG_DIR -u CODEX_HOME -u PI_CODING_AGENT_DIR -u PI_PACKAGE_DIR -u VIBE_HOME \
+if env -u CLAUDE_CONFIG_DIR -u CODEX_HOME -u PI_CODING_AGENT_DIR -u PI_PACKAGE_DIR -u VIBE_HOME -u OPENCODE_CONFIG_DIR -u XDG_CONFIG_HOME -u XDG_DATA_HOME \
   "${common[@]}" HOME="$refuse_home" HOST_HOME="$refuse_home" "$ROOT/bin/harness-docker-ctrl" build-image > "$TMP/refuse.out" 2>&1; then exit 1; fi
 grep -Fq 'Single-file bind mounts break' "$TMP/refuse.out"
 
 if env "${common[@]}" HOME="$home" HOST_HOME="$home" CLAUDE_CONFIG_DIR="$home/.claude" CODEX_HOME=relative "$ROOT/bin/harness-docker-ctrl" build-image > "$TMP/absolute.out" 2>&1; then exit 1; fi
 grep -Fq 'CODEX_HOME must be an absolute path' "$TMP/absolute.out"
+
+if env "${common[@]}" HOME="$home" HOST_HOME="$home" CLAUDE_CONFIG_DIR="$home/.claude" XDG_DATA_HOME=relative "$ROOT/bin/harness-docker-ctrl" build-image > "$TMP/xdg-absolute.out" 2>&1; then exit 1; fi
+grep -Fq 'XDG_DATA_HOME must be an absolute path' "$TMP/xdg-absolute.out"
 
 : > "$MOCK_LOG"
 if env "${common[@]}" HOME="$home" HOST_HOME="$home" CLAUDE_CONFIG_DIR="$home/.claude" AWS_AI_PROXY_ENABLED=false AWS_CRED_PROXY_PORT=1 HARNESS_DOCKER_AWS_PROXY_MIGRATION_CHOICE=s "$ROOT/bin/harness-docker-ctrl" build-image > "$TMP/aws.out" 2>&1; then exit 1; fi
