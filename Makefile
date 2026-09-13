@@ -54,6 +54,8 @@ vscode-wrapper: ## Print path to the VS Code wrapper binary
 test: ## Run host-side integration tests
 	@echo "Running tests (branch: $(GIT_BRANCH), $(GIT_SHA))..."
 	@shopt -s nullglob; tests=(test/test-*.sh); for test_file in "$${tests[@]}"; do bash "$$test_file"; done
+	@cd docker-filter-proxy && go test ./...
+	@cd beeper && go test ./...
 
 test-verbose: ## Run tests with bash -x tracing
 	@shopt -s nullglob; tests=(test/test-*.sh); for test_file in "$${tests[@]}"; do bash -x "$$test_file"; done
