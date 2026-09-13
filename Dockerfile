@@ -143,7 +143,11 @@ RUN if [ -n "$CODEX_VERSION" ]; then \
       npm install -g "@openai/codex@${CODEX_VERSION}"; \
     else \
       npm install -g @openai/codex; \
-    fi
+    fi \
+    && vendored_rg=$(find /usr/local/lib/node_modules -type f -path '*/codex-path/rg' -print -quit) \
+    && test -n "$vendored_rg" \
+    && ln -sf /usr/bin/rg "$vendored_rg" \
+    && "$vendored_rg" --version
 
 # ── Claude Code (native installer) ─────────────────────────────
 ARG CC_VERSION=""

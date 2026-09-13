@@ -12,4 +12,5 @@ for harness in claude codex pi vibe opencode; do
   docker exec "$container" test -e "/this-is-$harness-docker-env"
   docker exec "$container" test -L "/usr/local/bin/$harness-notifier"
 done
+docker exec "$container" sh -c 'vendored_rg=$(find /usr/local/lib/node_modules -path "*/codex-path/rg" -print -quit); test -n "$vendored_rg"; "$vendored_rg" --version >/dev/null'
 echo 'running generation container smoke: ok'

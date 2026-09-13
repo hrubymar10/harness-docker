@@ -28,6 +28,11 @@ launcher and editor-wrapper variants. Image and Compose changes must
 also keep the render and smoke assertions green. Keep host utilities small and
 direct, preserve security defaults in tests, and never commit a red tree.
 
+The running-container smoke suite also finds Codex's `codex-path/rg` entry and
+executes `--version`. This protects the image contract that the vendored path
+resolves to Alpine's working system ripgrep rather than an incompatible bundled
+binary.
+
 Dependency changes require explicit approval before editing package lists or Go
 modules. Propose the package and version, why it is needed, and its risk first.
 
