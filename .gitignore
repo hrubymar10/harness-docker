@@ -1,0 +1,17 @@
+beeper/beeper
+
+config/.env
+config/docker-compose.local.yml
+config/*-notifier
+!config/*.example
+config/logs/
+config/custom-bin/*
+!config/custom-bin/.gitkeep
+
+gpg-keys/*
+!gpg-keys/.gitkeep
+
+.tmp/
+
+# macOS
+.DS_Store
