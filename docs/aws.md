@@ -12,3 +12,6 @@ defaults to `http://host.docker.internal:9998`.
 The generated configuration exposes only what the external proxy authorizes.
 Refresh expired authentication on the host, and do not treat this integration as
 a substitute for least-privilege AWS policy.
+
+The shared image includes AWS CLI so generated profiles can be used directly by
+tools inside the sandbox.

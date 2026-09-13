@@ -28,3 +28,9 @@ These controls reduce mistakes without pretending that arbitrary code is safe.
 Server-side repository protection remains authoritative, and any mounted state,
 credentials, or environment variables are visible to processes that can read
 them.
+
+The image grants passwordless sudo inside the container to preserve normal
+development workflows. It also installs package managers and language tooling
+that can download and execute code. These are intentional usability choices,
+not containment guarantees; review image pins and additions as trusted supply
+chain inputs.

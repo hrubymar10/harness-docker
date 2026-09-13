@@ -19,3 +19,15 @@ The setup scripts also:
 
 Only mount paths and configuration that sandboxed processes may read. Machine
 specific configuration belongs in ignored files under `config/`.
+
+## Building the image
+
+The Alpine-based image installs Docker tooling, Git, GitHub and GitLab CLIs,
+AWS CLI, Go, Node.js tooling, Python tooling, debuggers, language servers, and
+the four supported harnesses. Build arguments include `GO_VERSION`,
+`CC_VERSION`, `CODEX_VERSION`, `PI_VERSION`, `VIBE_VERSION`, and extra Alpine,
+npm, Go, and Python package lists. Pinning a harness version makes builds
+reproducible; empty harness-version values select the upstream current release.
+
+Extra package lists execute during image build and are trusted inputs. Review
+them as dependency changes before enabling them.

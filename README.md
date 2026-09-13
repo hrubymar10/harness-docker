@@ -1,13 +1,23 @@
 # harness-docker
 
 Shared foundations for running coding-agent harnesses in a Docker sandbox. The
-repository currently provides the safety helpers, host utilities, and test
-scaffolding used by the image and launchers added in later commits.
+shared image contains four supported harnesses:
+
+| Harness | Documentation |
+| --- | --- |
+| Claude Code | [Claude Code](docs/claude-code.md) |
+| Codex CLI | [Codex](docs/codex.md) |
+| pi | [pi](docs/pi.md) |
+| Mistral Vibe | [Mistral Vibe](docs/vibe.md) |
 
 ## Documentation
 
 - [Setup and host integration](docs/setup.md)
 - [AWS credential proxy](docs/aws.md)
+- [Claude Code](docs/claude-code.md)
+- [Codex](docs/codex.md)
+- [pi](docs/pi.md)
+- [Mistral Vibe](docs/vibe.md)
 - [Development](docs/development.md)
 - [Security model](docs/security.md)
 
