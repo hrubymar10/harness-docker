@@ -62,6 +62,7 @@ Prefer small, direct shell scripts over heavy abstractions. Keep harness-specifi
 - `docs/updates.md` — default-branch checks and fast-forward updates.
 - `docs/security.md` — threat model, defense layers, and known limitations.
 - `docs/aws.md`, `docs/gpg.md`, `docs/notifications.md` — optional host integrations.
+- `docs/migration.md` — transition from the standalone harness stacks.
 - `docs/development.md` — repository layout and validation workflow.
 
 ## Generations model

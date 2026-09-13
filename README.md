@@ -50,6 +50,7 @@ shared lifecycle operations. Read [Setup](docs/setup.md) before first use.
 - [AWS credential proxy](docs/aws.md)
 - [GPG signing](docs/gpg.md)
 - [Beeper and notifications](docs/notifications.md)
+- [Migration from the standalone stacks](docs/migration.md)
 - [Development and testing](docs/development.md)
 
 ## Supersedes
@@ -57,6 +58,7 @@ shared lifecycle operations. Read [Setup](docs/setup.md) before first use.
 This repository replaces the separate `claude-docker`, `codex-docker`,
 `pi-docker`, and `vibe-docker` repositories with one image, lifecycle, security
 policy, and set of host integrations. Existing launcher names remain unchanged.
+See the [migration guide](docs/migration.md) before retiring an old stack.
 
 ## License
 

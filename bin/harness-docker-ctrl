@@ -553,8 +553,33 @@ offer_running_rebuild() {
   case "$answer" in ''|y|Y|yes|YES|Yes) return 0 ;; *) return 1 ;; esac
 }
 
+show_legacy_stack_notice() {
+  local marker="${HARNESS_DOCKER_LEGACY_NOTICE_MARKER:-$CONFIG_DIR/.legacy-notice-shown}"
+  local output name project legacy prefix
+  local -a found=()
+  [[ ! -e "$marker" ]] || return 0
+  output=$(docker ps --format '{{.Names}}|{{.Label "com.docker.compose.project"}}' 2>/dev/null) || return 0
+  while IFS='|' read -r name project; do
+    for legacy in claude-docker codex-docker pi-docker vibe-docker; do
+      prefix="${legacy%-docker}"
+      if [[ "$project" == "$legacy" || "$name" == "$legacy" || "$name" == "$prefix-filter-proxy" || "$name" == "$prefix-socket-proxy" ]]; then
+        [[ " ${found[*]} " == *" $legacy "* ]] || found+=("$legacy")
+      fi
+    done
+  done <<< "$output"
+  ((${#found[@]})) || return 0
+  echo 'Notice: harness-docker supersedes these running legacy standalone stacks:' >&2
+  for legacy in "${found[@]}"; do
+    echo "  docker compose -p $legacy down --rmi local" >&2
+  done
+  echo 'Run the commands on the host when you are ready; harness-docker will never remove legacy resources itself.' >&2
+  mkdir -p "$(dirname "$marker")"
+  : > "$marker"
+}
+
 cmd_start() {
   local current generation
+  show_legacy_stack_notice
   check_docker_api_version; AWS_PROXY_MIGRATION_CHECK=true; setup_env; AWS_PROXY_MIGRATION_CHECK=false
   auto_reap_retired
   if current=$(read_current_generation 2>/dev/null) && [[ -n "$(generation_agent_container_id "$current")" ]]; then

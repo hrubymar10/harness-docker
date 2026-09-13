@@ -10,6 +10,7 @@ config/custom-bin/*
 config/.current-generation
 config/.current-generation.tmp.*
 config/.retired-generations/
+config/.legacy-notice-shown
 
 gpg-keys/*
 !gpg-keys/.gitkeep
