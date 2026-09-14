@@ -108,6 +108,7 @@ ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 # CLI installs are ordered from least- to most-frequently pinned for caching.
 
 # ── opencode-ai (MIT) ───────────────────────────────────────────
+ARG HARNESS_REFRESH=""
 ARG OPENCODE_VERSION=""
 RUN if [ -n "$OPENCODE_VERSION" ]; then \
       npm install -g "opencode-ai@${OPENCODE_VERSION}"; \

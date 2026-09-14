@@ -16,10 +16,35 @@ if [[ "$1" == compose ]]; then
   if [[ "$*" == *' config'* && "$*" != *' -q'* ]]; then printf 'services:\n  harness:\n    volumes:\n      - source: /allowed\n'; fi
   exit 0
 fi
-if [[ "$1" == ps ]]; then exit 0; fi
+if [[ "$1" == ps ]]; then
+  [[ "$*" != *--filter* ]] || echo mock-container
+  exit 0
+fi
+if [[ "$1" == inspect ]]; then echo test-version; exit 0; fi
+if [[ "$1" == exec ]]; then
+  [[ "$*" != *curl* ]] || echo OK
+  exit 0
+fi
 exit 2
 EOF
-chmod +x "$TMP/bin/docker"; export MOCK_LOG="$TMP/docker.log"
+cat > "$TMP/bin/git" <<'EOF'
+#!/bin/bash
+if [[ "$*" == *describe* ]]; then echo test-version; fi
+exit 0
+EOF
+cat > "$TMP/bin/date" <<'EOF'
+#!/bin/bash
+if [[ "$*" == '+%s' ]]; then
+  value=$(cat "$MOCK_DATE_COUNTER" 2>/dev/null || echo 1700000000)
+  value=$((value + 1))
+  echo "$value" > "$MOCK_DATE_COUNTER"
+  echo "$value"
+else
+  /bin/date "$@"
+fi
+EOF
+chmod +x "$TMP/bin/docker" "$TMP/bin/git" "$TMP/bin/date"
+export MOCK_LOG="$TMP/docker.log" MOCK_DATE_COUNTER="$TMP/date-counter"
 common=(PATH="$TMP/bin:$PATH" TMPDIR="$TMP/tmp" HARNESS_DOCKER_SKIP_UPDATE_CHECK=1 ALLOWED_BIND_MOUNTS=/allowed HOST_UID=1000 HOST_USER=tester)
 
 home="$TMP/home"; mkdir -p "$home/projects/secrets"; touch "$home/projects/.env"
@@ -60,4 +85,51 @@ grep -Fq 'Switch to aws-ai-proxy' "$TMP/aws.out"; if grep -q '^compose ' "$MOCK_
 
 if env "${common[@]}" HOME="$home" HOST_HOME="$home" CLAUDE_CONFIG_DIR="$home/.claude" MOCK_API=1.43 "$ROOT/bin/harness-docker-ctrl" build-image > "$TMP/api.out" 2>&1; then exit 1; fi
 grep -Fq 'too old' "$TMP/api.out"
+
+life_root="$TMP/controller-root"
+mkdir -p "$life_root/config"
+cp -R "$ROOT/bin" "$life_root/bin"
+cp "$ROOT/docker-compose.yml" "$life_root/docker-compose.yml"
+cp "$ROOT/config/harness-notifier.example" "$life_root/config/harness-notifier.example"
+life_home="$TMP/lifecycle-home"; mkdir -p "$life_home"
+life_common=("${common[@]}" HOME="$life_home" HOST_HOME="$life_home" CLAUDE_CONFIG_DIR="$life_home/.claude")
+
+run_build_case() {
+  local name="$1"; shift
+  : > "$MOCK_LOG"
+  env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" "$@" > "$TMP/$name.out"
+  grep '^compose .* build ' "$MOCK_LOG" > "$TMP/$name.build"
+}
+
+run_build_case rebuild-one rebuild
+grep -Fq -- '--build-arg HARNESS_REFRESH=' "$TMP/rebuild-one.build"
+if grep -Fq -- '--no-cache' "$TMP/rebuild-one.build"; then exit 1; fi
+first_refresh=$(sed -n 's/.*HARNESS_REFRESH=\([0-9][0-9]*\).*/\1/p' "$TMP/rebuild-one.build")
+
+run_build_case rebuild-two rebuild
+second_refresh=$(sed -n 's/.*HARNESS_REFRESH=\([0-9][0-9]*\).*/\1/p' "$TMP/rebuild-two.build")
+[[ -n "$first_refresh" && -n "$second_refresh" && "$first_refresh" != "$second_refresh" ]]
+
+run_build_case rebuild-no-cache rebuild --no-cache
+grep -Fq -- '--no-cache' "$TMP/rebuild-no-cache.build"
+if grep -Fq -- 'HARNESS_REFRESH=' "$TMP/rebuild-no-cache.build"; then exit 1; fi
+
+rm -f "$life_root/config/.current-generation"
+run_build_case start-default start
+if grep -Eq -- '--no-cache|HARNESS_REFRESH=' "$TMP/start-default.build"; then exit 1; fi
+
+rm -f "$life_root/config/.current-generation"
+run_build_case start-no-cache start --no-cache
+grep -Fq -- '--no-cache' "$TMP/start-no-cache.build"
+if grep -Fq -- 'HARNESS_REFRESH=' "$TMP/start-no-cache.build"; then exit 1; fi
+
+run_build_case image-default build-image
+if grep -Eq -- '--no-cache|HARNESS_REFRESH=' "$TMP/image-default.build"; then exit 1; fi
+
+run_build_case image-no-cache build-image --no-cache
+grep -Fq -- '--no-cache' "$TMP/image-no-cache.build"
+if grep -Fq -- 'HARNESS_REFRESH=' "$TMP/image-no-cache.build"; then exit 1; fi
+
+if env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" rebuild --bogus > "$TMP/bogus.out" 2>&1; then exit 1; fi
+grep -Fq 'usage: harness-docker-ctrl rebuild [--no-cache]' "$TMP/bogus.out"
 echo 'controller preflight overrides: ok'

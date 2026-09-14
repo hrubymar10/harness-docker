@@ -29,7 +29,7 @@ restart: stop start ## Restart container
 status: ## Show container status
 	@bin/harness-docker-ctrl status
 
-rebuild: ## Rebuild image from scratch and restart
+rebuild: ## Refresh harnesses and restart using cached base layers
 	@bin/harness-docker-ctrl rebuild
 
 shell: ## Open a shell inside the container (auto-detects from host $$SHELL)

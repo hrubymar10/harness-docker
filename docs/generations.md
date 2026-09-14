@@ -7,7 +7,9 @@ ID for the entire session; a later rebuild never retargets a running harness.
 
 `harness-docker-ctrl rebuild` builds and starts a replacement, waits for its
 health checks, then atomically switches the pointer. Existing sessions remain on
-the retired generation and new sessions enter the replacement.
+the retired generation and new sessions enter the replacement. Rebuilds reuse
+cached base-image layers by default while refreshing all harness CLI installs.
+Pass `--no-cache` to rebuild every image layer from scratch.
 
 Each session owns a PID directory associated with its generation. Retirement and
 `harness-docker-ctrl gc` remove an old Compose project only after stale PID
