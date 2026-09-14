@@ -9,7 +9,8 @@ with `codex login` or provide `OPENAI_API_KEY`, then mount only the state and
 projects the sandbox may access.
 
 Run `codex-docker`; arguments are forwarded after
-`--dangerously-bypass-approvals-and-sandbox`. For VS Code, set
+`--dangerously-bypass-approvals-and-sandbox`, or after `CODEX_LAUNCH_FLAGS` when
+that override is set. For VS Code, set
 `chatgpt.cliExecutable` to the absolute path of
 `codex-docker-vscode-wrapper`. The launcher exports `CODEX_SESSION_ID` and uses
 the mounted `CODEX_HOME`.

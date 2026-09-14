@@ -2,9 +2,15 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP=$(mktemp -d); POINTER="$ROOT/config/.current-generation"; POINTER_BACKUP=""
-restore() { if [[ -n "$POINTER_BACKUP" ]]; then cp "$POINTER_BACKUP" "$POINTER"; else rm -f "$POINTER"; fi; rm -rf "$TMP"; }
+ENV_FILE="$ROOT/config/.env"; ENV_BACKUP=""
+restore() {
+  if [[ -n "$POINTER_BACKUP" ]]; then cp "$POINTER_BACKUP" "$POINTER"; else rm -f "$POINTER"; fi
+  if [[ -n "$ENV_BACKUP" ]]; then mv "$ENV_BACKUP" "$ENV_FILE"; else rm -f "$ENV_FILE"; fi
+  rm -rf "$TMP"
+}
 trap restore EXIT
 if [[ -f "$POINTER" ]]; then POINTER_BACKUP="$TMP/current-generation.bak"; cp "$POINTER" "$POINTER_BACKUP"; fi
+if [[ -f "$ENV_FILE" ]]; then ENV_BACKUP="$TMP/env.bak"; mv "$ENV_FILE" "$ENV_BACKUP"; fi
 mkdir -p "$TMP/bin" "$TMP/work/project"; printf 'manual\n' > "$POINTER"
 cat > "$TMP/bin/docker" <<'EOF'
 #!/bin/bash
@@ -49,6 +55,24 @@ for harness in claude codex pi vibe opencode; do
   grep -Eq "exec -i .*${HARNESS_SESSION_ENV}=.* -e HARNESS_DOCKER_SESSION_PID_DIR=/tmp -u tester -w .*/work/project cid-pinned ${HARNESS_SESSION_WRAPPER}" "$LOG"
   for flag in "${HARNESS_LAUNCH_FLAGS[@]}"; do grep -Fq -- "$flag" "$LOG"; done
 done
+
+: > "$LOG"
+(cd "$TMP/work/project"; CLAUDE_LAUNCH_FLAGS='--permission-mode auto --settings /etc/claude/hooks.json' "$ROOT/bin/claude-docker" --version >/dev/null)
+grep -q 'cid-pinned claude-session --permission-mode auto --settings /etc/claude/hooks.json --version' "$LOG"
+if grep -q -- '--dangerously-skip-permissions' "$LOG"; then exit 1; fi
+: > "$LOG"
+(cd "$TMP/work/project"; VIBE_LAUNCH_FLAGS='' "$ROOT/bin/vibe-docker" --version >/dev/null)
+grep -q 'cid-pinned vibe-session --version' "$LOG"
+printf 'OPENCODE_LAUNCH_FLAGS="--auto --model example/quoted"\n' > "$ENV_FILE"
+: > "$LOG"
+(cd "$TMP/work/project"; "$ROOT/bin/opencode-docker" --version >/dev/null)
+grep -q 'cid-pinned opencode-session --auto --model example/quoted --version' "$LOG"
+printf 'VIBE_LAUNCH_FLAGS=--yolo\n' > "$ENV_FILE"
+: > "$LOG"
+(cd "$TMP/work/project"; VIBE_LAUNCH_FLAGS='' "$ROOT/bin/vibe-docker" --version >/dev/null)
+grep -q 'cid-pinned vibe-session --version' "$LOG"
+if grep -q -- '--yolo' "$LOG"; then exit 1; fi
+rm -f "$ENV_FILE"
 
 MOUNT="$TMP/elsewhere"
 if (cd "$TMP/work/project"; "$ROOT/bin/codex-docker" --version > "$TMP/reject.out" 2>&1); then exit 1; fi

@@ -5,8 +5,9 @@ OpenCode is installed from the `opencode-ai` npm package. Set the
 the package's current release. Image-level automatic updates are disabled so a
 running container cannot drift from the built generation.
 
-Run `opencode-docker`; arguments are forwarded after `--auto`. Integrations that
-accept a CLI executable can use the absolute path to
+Run `opencode-docker`; arguments are forwarded after `--auto`, or after
+`OPENCODE_LAUNCH_FLAGS` when that override is set. Integrations that accept a
+CLI executable can use the absolute path to
 `opencode-docker-vscode-wrapper`. The launcher exports `OPENCODE_SESSION_ID` and
 uses the shared session cleanup and generation-pinning behavior.
 

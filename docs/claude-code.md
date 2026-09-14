@@ -10,11 +10,13 @@ on the host before mounting that state. Because sandbox processes can read and
 modify it, use a dedicated account or limited credentials when appropriate.
 
 Run `claude-docker`; arguments are forwarded after the launcher's
-`--dangerously-skip-permissions` flag. For VS Code, configure the absolute path
-to `claude-docker-vscode-wrapper` as `claudeCode.claudeProcessWrapper` and set
+`--dangerously-skip-permissions` flag, or after `CLAUDE_LAUNCH_FLAGS` when that
+override is set (for example `--permission-mode auto --settings <file>`). This
+override applies to the terminal launcher, not the Claude VS Code wrapper,
+which resets the flags by design. For VS Code, configure the absolute path to
+`claude-docker-vscode-wrapper` as `claudeCode.claudeProcessWrapper` and set
 `claudeCode.useTerminal` to `false`, because terminal mode bypasses the wrapper.
-The launcher exports `CLAUDE_SESSION_ID` and uses the mounted
-`CLAUDE_CONFIG_DIR`.
+The launcher exports `CLAUDE_SESSION_ID` and uses the mounted `CLAUDE_CONFIG_DIR`.
 
 Claude's configuration must use the directory layout described in
 [Setup](setup.md); the controller fails closed when the unsafe legacy file bind

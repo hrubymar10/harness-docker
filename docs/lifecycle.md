@@ -9,6 +9,13 @@ Interactive callers receive a TTY. Piped commands and editor wrappers keep
 stdin/stdout stream-safe. Arguments after the launcher are forwarded to the
 harness, and session PID bookkeeping is removed on normal exit or signals.
 
+Each launcher prepends a built-in permission flag (see the harness guides).
+Set `<HARNESS>_LAUNCH_FLAGS`, for example `CLAUDE_LAUNCH_FLAGS`, in the host
+environment or `config/.env` to replace those flags; an empty value clears
+them. The override is read at launch, so it affects new sessions only and never
+a running one. Override values are split on whitespace, so an individual flag
+value cannot contain whitespace.
+
 The launchers are `claude-docker`, `codex-docker`, `pi-docker`, and
 `vibe-docker`, and `opencode-docker`. Matching `*-docker-vscode-wrapper` commands provide an executable
 path for editor integrations.

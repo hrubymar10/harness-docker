@@ -17,8 +17,19 @@ _load_harness_env() {
     key="${line%%=*}"
     value="${line#*=}"
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    if [[ "$value" == '"'*'"' ]]; then value="${value#\"}"; value="${value%\"}"
+    elif [[ "$value" == "'"*"'" ]]; then value="${value#\'}"; value="${value%\'}"; fi
     [[ -n "${!key:-}" ]] || export "$key=$value"
   done < "$env_file"
+}
+
+# <HARNESS>_LAUNCH_FLAGS replaces the launcher's built-in flags; an empty
+# value clears them.
+_apply_launch_flags_override() {
+  local variable
+  variable="$(printf '%s' "$HARNESS" | tr '[:lower:]' '[:upper:]')_LAUNCH_FLAGS"
+  [[ -n "${!variable+x}" ]] || return 0
+  read -ra HARNESS_LAUNCH_FLAGS <<< "${!variable}"
 }
 
 _launcher_script_path() {
@@ -38,7 +49,8 @@ _die() {
 
 harness_main() {
   local script_path derived_harness container_id status workdir mounts mounted source_path
-  local docker_user session_id exit_code
+  local docker_user session_id exit_code launch_flags_variable launch_flags_was_set
+  local launch_flags_host_value
   local -a docker_flags launch_flags
 
   script_path=$(_launcher_script_path "$0")
@@ -52,7 +64,14 @@ harness_main() {
     return 1
   fi
   load_harness_spec "$HARNESS"
+  launch_flags_variable="$(printf '%s' "$HARNESS" | tr '[:lower:]' '[:upper:]')_LAUNCH_FLAGS"
+  launch_flags_was_set="${!launch_flags_variable+x}"
+  launch_flags_host_value="${!launch_flags_variable-}"
   _load_harness_env
+  if [[ -n "$launch_flags_was_set" ]]; then
+    export "$launch_flags_variable=$launch_flags_host_value"
+  fi
+  _apply_launch_flags_override
 
   docker info >/dev/null 2>&1 || {
     _die "Docker is not running."

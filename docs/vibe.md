@@ -9,7 +9,8 @@ Vibe state defaults to `~/.vibe`. Authenticate with Vibe's `/login` flow or
 provide `MISTRAL_API_KEY`. Treat the mounted state and provider key as readable
 by all processes in the sandbox.
 
-Run `vibe-docker`; arguments are forwarded after `--yolo`. Integrations that
-accept a CLI executable can use the absolute path to
+Run `vibe-docker`; arguments are forwarded after `--yolo`, or after
+`VIBE_LAUNCH_FLAGS` when that override is set. Integrations that accept a CLI
+executable can use the absolute path to
 `vibe-docker-vscode-wrapper`. The launcher exports `VIBE_SESSION_ID` and uses
 the mounted `VIBE_HOME`.
