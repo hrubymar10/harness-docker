@@ -97,7 +97,7 @@ harness_main() {
   start_session_watchdog "$container_id" "$session_id" "$$" "$docker_user"
 
   docker_flags=(-i)
-  launch_flags=("${HARNESS_LAUNCH_FLAGS[@]}")
+  launch_flags=(${HARNESS_LAUNCH_FLAGS[@]+"${HARNESS_LAUNCH_FLAGS[@]}"})
   if [[ "$HARNESS" == claude && "${HARNESS_LAUNCH_MODE:-}" == claude-vscode ]]; then
     (($# > 0)) && shift
     launch_flags=()
@@ -110,7 +110,7 @@ harness_main() {
     -e "$HARNESS_SESSION_ENV=$session_id" \
     -e "HARNESS_DOCKER_SESSION_PID_DIR=${HARNESS_DOCKER_SESSION_PID_DIR:-/tmp}" \
     -u "$docker_user" -w "$workdir" "$container_id" \
-    "$HARNESS_SESSION_WRAPPER" "${launch_flags[@]}" "$@"
+    "$HARNESS_SESSION_WRAPPER" ${launch_flags[@]+"${launch_flags[@]}"} "$@"
   exit_code=$?
   set -e
 

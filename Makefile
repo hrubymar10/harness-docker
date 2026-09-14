@@ -61,7 +61,7 @@ test-verbose: ## Run tests with bash -x tracing
 	@shopt -s nullglob; tests=(test/test-*.sh); for test_file in "$${tests[@]}"; do bash -x "$$test_file"; done
 
 lint: ## Run shell syntax checks and shellcheck when available
-	@mapfile -d '' files < <(find bin -type f ! -name '.*' -print0; find scripts -maxdepth 1 -type f -name '*.sh' -print0); \
+	@files=(); while IFS= read -r -d '' file; do files+=("$$file"); done < <(find bin -type f ! -name '.*' -print0; find scripts -maxdepth 1 -type f -name '*.sh' -print0); \
 	if (($${#files[@]})); then \
 		bash -n "$${files[@]}"; \
 		if command -v shellcheck >/dev/null 2>&1; then shellcheck "$${files[@]}"; fi; \
