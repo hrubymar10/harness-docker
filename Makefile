@@ -53,12 +53,12 @@ vscode-wrapper: ## Print path to the VS Code wrapper binary
 
 test: ## Run host-side integration tests
 	@echo "Running tests (branch: $(GIT_BRANCH), $(GIT_SHA))..."
-	@shopt -s nullglob; tests=(test/test-*.sh); for test_file in "$${tests[@]}"; do bash "$$test_file"; done
+	@shopt -s nullglob; tests=(test/test-*.sh); for test_file in "$${tests[@]}"; do bash "$$test_file" || { echo "FAILED: $$test_file" >&2; exit 1; }; done
 	@cd docker-filter-proxy && go test ./...
 	@cd beeper && go test ./...
 
 test-verbose: ## Run tests with bash -x tracing
-	@shopt -s nullglob; tests=(test/test-*.sh); for test_file in "$${tests[@]}"; do bash -x "$$test_file"; done
+	@shopt -s nullglob; tests=(test/test-*.sh); for test_file in "$${tests[@]}"; do bash -x "$$test_file" || { echo "FAILED: $$test_file" >&2; exit 1; }; done
 
 lint: ## Run shell syntax checks and shellcheck when available
 	@files=(); while IFS= read -r -d '' file; do files+=("$$file"); done < <(find bin -type f ! -name '.*' -print0; find scripts -maxdepth 1 -type f -name '*.sh' -print0); \

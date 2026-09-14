@@ -403,7 +403,7 @@ apply_excludes() {
       patterns+=("$pat")
     elif $in_block; then break; fi
   done < "$local_file"
-  for pat in "${patterns[@]}"; do
+  for pat in ${patterns[@]+"${patterns[@]}"}; do
     while IFS= read -r path; do
       [[ -z "$path" ]] && continue
       if [[ -d "$path" ]]; then dirs+=("$path"); else files+=("$path"); fi
@@ -569,7 +569,7 @@ show_legacy_stack_notice() {
     for legacy in claude-docker codex-docker pi-docker vibe-docker; do
       prefix="${legacy%-docker}"
       if [[ "$project" == "$legacy" || "$name" == "$legacy" || "$name" == "$prefix-filter-proxy" || "$name" == "$prefix-socket-proxy" ]]; then
-        [[ " ${found[*]} " == *" $legacy "* ]] || found+=("$legacy")
+        [[ " ${found[*]-} " == *" $legacy "* ]] || found+=("$legacy")
       fi
     done
   done <<< "$output"
