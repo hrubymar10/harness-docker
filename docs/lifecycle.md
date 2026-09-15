@@ -47,6 +47,9 @@ with the user-facing examples when they are added.
 `start` and `build-image` use the full build cache by default. `rebuild` also
 uses the cache, but invalidates the harness-install layers so unpinned CLIs are
 refreshed. Use `--no-cache` with any of those three commands for a full rebuild.
+Every successful image build also updates `harness-docker:latest` for direct
+external `docker run` calls; managed generations remain pinned to versioned
+image tags.
 
 See [Generations and rebuilds](generations.md) for the current-pointer, session
 pinning, retirement, and garbage-collection guarantees.

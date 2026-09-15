@@ -16,6 +16,7 @@ if [[ "$1" == compose ]]; then
   if [[ "$*" == *' config'* && "$*" != *' -q'* ]]; then printf 'services:\n  harness:\n    volumes:\n      - source: /allowed\n'; fi
   exit 0
 fi
+if [[ "$1" == tag ]]; then exit 0; fi
 if [[ "$1" == ps ]]; then
   [[ "$*" != *--filter* ]] || echo mock-container
   exit 0
@@ -99,6 +100,7 @@ run_build_case() {
   : > "$MOCK_LOG"
   env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" "$@" > "$TMP/$name.out"
   grep '^compose .* build ' "$MOCK_LOG" > "$TMP/$name.build"
+  grep -Fxq 'tag harness-docker:test-version harness-docker:latest ' "$MOCK_LOG"
 }
 
 run_build_case rebuild-one rebuild

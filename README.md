@@ -40,7 +40,8 @@ Launch from a mounted working directory. Arguments are forwarded to the selected
 harness. Use `harness-docker-ctrl shell`, `exec`, `rebuild`, `gc`, or `stop` for
 shared lifecycle operations. Read [Setup](docs/setup.md) before first use.
 `rebuild` refreshes the harness CLIs while reusing cached base layers; pass
-`--no-cache` for a full rebuild.
+`--no-cache` for a full rebuild. Successful builds also tag the image as
+`harness-docker:latest` for direct external runs.
 
 ## Documentation
 

@@ -473,7 +473,10 @@ generation_image_override() {
   printf 'services:\n  harness:\n    image: harness-docker:%s\n' "$tag" > "$file"
   TEMP_OVERRIDES+=("$file")
   IMAGE_OVERRIDE="$file"
+  IMAGE_TAG="$tag"
 }
+
+tag_latest() { docker tag "harness-docker:$IMAGE_TAG" harness-docker:latest; }
 
 wait_for_generation() {
   local generation="$1" project harness_id filter_id socket_id _attempt
@@ -510,6 +513,7 @@ start_generation() {
     build_args+=(--build-arg "HARNESS_REFRESH=$(date +%s)")
   fi
   "${build_args[@]}"
+  tag_latest
   echo "Starting generation $generation..."
   docker compose -p "$project" "${COMPOSE_FILES[@]}" -f "$image_override" up -d
   if ! wait_for_generation "$generation"; then
@@ -670,6 +674,7 @@ cmd_build_image() {
   local -a build_args=(docker compose -p "$project" "${COMPOSE_FILES[@]}" -f "$image_override" build --build-arg "VERSION=$version")
   [[ "$no_cache" != true ]] || build_args+=(--no-cache)
   "${build_args[@]}"
+  tag_latest
 }
 
 cmd_status() {
