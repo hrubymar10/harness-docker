@@ -86,6 +86,16 @@ read-only, and the Docker socket only into the socket proxy. Use the memory-limi
 setting where desired. Docker Desktop and Docker Engine reach host helpers via
 `host.docker.internal` and the configured host-gateway mapping.
 
+## SSH agent forwarding
+
+When `SSH_AUTH_SOCK` points at a socket, the controller keeps a `socat` relay on
+`127.0.0.1:19922` (override with `SSH_RELAY_PORT` in `config/.env`) that bridges
+the host agent, and the container entrypoint exposes it as `/tmp/ssh-agent.sock`.
+No private key enters the sandbox; revoke access by stopping the host agent. The
+relay's PID file lives at `~/.harness-docker-ssh-relay.pid` unless
+`SSH_RELAY_PID_FILE` says otherwise. A port already served by another process is
+reused rather than replaced.
+
 ## Starting the stack
 
 Put the repository's `bin/` directory on `PATH`, then run

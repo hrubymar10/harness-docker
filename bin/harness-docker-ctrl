@@ -8,8 +8,6 @@ HARNESS_DOCKER_ROOT="$PROJECT_DIR"
 UPDATE_ROOT="${HARNESS_DOCKER_UPDATE_SOURCE_ROOT:-$PROJECT_DIR}"
 HARNESS_COMPOSE_PROJECT_NAME="${HARNESS_COMPOSE_PROJECT_NAME:-}"
 MIN_API_VERSION=1.44
-SSH_RELAY_PORT=19922
-SSH_RELAY_PID_FILE="$HOME/.harness-docker-ssh-relay.pid"
 BEEPER_PID_FILE="$HOME/.harness-docker-beeper.pid"
 AWS_PROXY_MIGRATION_CHECK=false
 COMPOSE_FILES=()
@@ -21,6 +19,8 @@ source "$SCRIPT_DIR/lib/harness.sh"
 source "$SCRIPT_DIR/lib/generations.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib/session-cleanup.sh"
+# shellcheck source=bin/lib/ssh-relay.sh
+source "$SCRIPT_DIR/lib/ssh-relay.sh"
 
 die() { echo "Error: $*" >&2; exit 1; }
 cleanup_temp_overrides() { ((${#TEMP_OVERRIDES[@]} == 0)) || rm -f "${TEMP_OVERRIDES[@]}"; }
@@ -378,7 +378,7 @@ setup_env() {
   [[ -n "${GONOSUMDB:-}" || -z "${GOPRIVATE:-}" ]] || export GONOSUMDB="$GOPRIVATE"
   CONTAINER_SHELL=$(resolve_shell "${CONTAINER_SHELL:-${SHELL:-bash}}")
   export CONTAINER_SHELL
-  if [[ -S "${SSH_AUTH_SOCK:-}" ]]; then export SSH_RELAY_HOST=host.docker.internal SSH_RELAY_PORT; fi
+  if [[ -S "${SSH_AUTH_SOCK:-}" ]]; then SSH_RELAY_PORT=$(ssh_relay_port); export SSH_RELAY_HOST=host.docker.internal SSH_RELAY_PORT; fi
   prepare_aws_ai_proxy_env
   configure_compose
 }
@@ -520,24 +520,6 @@ start_generation() {
   STARTED_GENERATION="$generation"
 }
 
-ssh_relay_healthy() {
-  [[ -f "$SSH_RELAY_PID_FILE" ]] || return 1
-  local pid; pid=$(cat "$SSH_RELAY_PID_FILE")
-  kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o command= 2>/dev/null | grep -q "TCP-LISTEN:${SSH_RELAY_PORT}"
-}
-start_ssh_relay() {
-  [[ -S "${SSH_AUTH_SOCK:-}" ]] || return 0
-  ssh_relay_healthy && return 0
-  rm -f "$SSH_RELAY_PID_FILE"
-  command -v socat >/dev/null || { echo 'Warning: socat not found; SSH relay disabled.' >&2; return; }
-  if command -v lsof >/dev/null && lsof -nP -iTCP:"$SSH_RELAY_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "SSH relay port $SSH_RELAY_PORT is already served; reusing it." >&2
-    return 0
-  fi
-  socat TCP-LISTEN:"$SSH_RELAY_PORT",fork,reuseaddr,bind=127.0.0.1 UNIX-CONNECT:"$SSH_AUTH_SOCK" &
-  echo "$!" > "$SSH_RELAY_PID_FILE"
-}
-stop_ssh_relay() { if ssh_relay_healthy; then kill "$(cat "$SSH_RELAY_PID_FILE")"; fi; rm -f "$SSH_RELAY_PID_FILE"; }
 
 start_beeper() {
   if [[ -f "$BEEPER_PID_FILE" ]] && kill -0 "$(cat "$BEEPER_PID_FILE")" 2>/dev/null; then echo 'Beeper already running.'; return; fi

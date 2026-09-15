@@ -14,7 +14,7 @@ exec "$TEST_GIT" upload-pack "\$@"
 EOF
 chmod +x "$TEST_ROOT/git-exec/git-upload-pack"
 cp "$ROOT/bin/harness-docker-ctrl" "$TEST_ROOT/seed/bin/"
-cp "$ROOT/bin/lib/"{harness,generations,session-cleanup}.sh "$TEST_ROOT/seed/bin/lib/"
+cp "$ROOT/bin/lib/"{harness,generations,session-cleanup,ssh-relay}.sh "$TEST_ROOT/seed/bin/lib/"
 printf 'base\n' > "$TEST_ROOT/seed/state"
 
 "$TEST_GIT" -C "$TEST_ROOT/seed" init -q -b main
