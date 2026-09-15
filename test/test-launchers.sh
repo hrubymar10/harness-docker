@@ -44,7 +44,7 @@ for harness in claude codex pi vibe opencode; do
   (cd "$TMP/work/project"; "$ROOT/bin/$harness-docker" --version > "$TMP/out")
   load_harness_spec "$harness"
   [[ "$HARNESS_SESSION_ENV" == "$expected_env" && "$HARNESS_SESSION_WRAPPER" == "$expected_wrapper" ]]
-  [[ "${HARNESS_LAUNCH_FLAGS[*]}" == "$expected_flags" ]]
+  [[ "${HARNESS_LAUNCH_FLAGS[*]-}" == "$expected_flags" ]]
   [[ "${#HARNESS_STATE_DIR_ENVS[@]}" == "${#HARNESS_STATE_DIR_SUFFIXES[@]}" ]]
   if [[ "$harness" == opencode ]]; then
     [[ "${HARNESS_STATE_DIR_ENVS[*]}" == 'OPENCODE_CONFIG_DIR XDG_DATA_HOME' ]]
@@ -53,7 +53,7 @@ for harness in claude codex pi vibe opencode; do
   [[ "$(HARNESS_DOCKER_ROOT="$ROOT" bash -c 'source "$HARNESS_DOCKER_ROOT/bin/lib/harness.sh"; harness_from_launcher "$0"' "$ROOT/bin/$harness-docker")" == "$harness" ]]
   grep -q '^harness-mock$' "$TMP/out"
   grep -Eq "exec -i .*${HARNESS_SESSION_ENV}=.* -e HARNESS_DOCKER_SESSION_PID_DIR=/tmp -u tester -w .*/work/project cid-pinned ${HARNESS_SESSION_WRAPPER}" "$LOG"
-  for flag in "${HARNESS_LAUNCH_FLAGS[@]}"; do grep -Fq -- "$flag" "$LOG"; done
+  for flag in ${HARNESS_LAUNCH_FLAGS[@]+"${HARNESS_LAUNCH_FLAGS[@]}"}; do grep -Fq -- "$flag" "$LOG"; done
 done
 
 : > "$LOG"
