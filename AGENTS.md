@@ -46,6 +46,7 @@
 - `docker/` — system configuration copied into the image.
 - `docker-filter-proxy/` — Docker API validation layer in front of the socket proxy.
 - `beeper/` — optional host-side HTTP notification server.
+- `mcpbridge/` — optional host-side MCP federation gateway.
 - `config/` — examples and gitignored local configuration.
 - `gpg-keys/` — local signing keys; only its placeholder is committed.
 - `test/` — host-side integration and regression tests.
@@ -62,6 +63,7 @@ Prefer small, direct shell scripts over heavy abstractions. Keep harness-specifi
 - `docs/updates.md` — default-branch checks and fast-forward updates.
 - `docs/security.md` — threat model, defense layers, and known limitations.
 - `docs/aws.md`, `docs/gpg.md`, `docs/notifications.md` — optional host integrations.
+- `docs/mcpbridge.md` — host stdio MCP federation, registration, and security.
 - `docs/migration.md` — transition from the standalone harness stacks.
 - `docs/development.md` — repository layout and validation workflow.
 

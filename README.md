@@ -24,8 +24,8 @@ isolation is required. See [Security](docs/security.md) and
 ## Quick start
 
 Requirements are macOS or Linux on amd64 or arm64, Docker Compose v2, and host
-authentication for at least one harness. Go is needed only to build the optional
-beeper locally.
+authentication for at least one harness. Go 1.23 or newer is needed only to
+build optional host tools such as the beeper and MCP gateway.
 
 ```bash
 export PATH="/path/to/harness-docker/bin:$PATH"
@@ -56,6 +56,7 @@ shared lifecycle operations. Read [Setup](docs/setup.md) before first use.
 - [AWS credential proxy](docs/aws.md)
 - [GPG signing](docs/gpg.md)
 - [Beeper and notifications](docs/notifications.md)
+- [Host MCP gateway](docs/mcpbridge.md)
 - [Migration from the standalone stacks](docs/migration.md)
 - [Development and testing](docs/development.md)
 

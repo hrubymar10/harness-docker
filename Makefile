@@ -16,7 +16,7 @@ GIT_SHA       := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown
 
 ##@ Container
 
-.PHONY: start stop restart status rebuild shell exec beeper-start beeper-stop vscode-wrapper
+.PHONY: start stop restart status rebuild shell exec beeper-start beeper-stop mcpbridge-start mcpbridge-stop vscode-wrapper
 
 start: ## Build image and start container
 	@bin/harness-docker-ctrl start
@@ -44,6 +44,12 @@ beeper-start: ## Start host beeper server
 beeper-stop: ## Stop host beeper server
 	@bin/harness-docker-ctrl beeper-stop
 
+mcpbridge-start: ## Start configured host MCP gateway
+	@bin/harness-docker-ctrl mcpbridge-start
+
+mcpbridge-stop: ## Stop host MCP gateway
+	@bin/harness-docker-ctrl mcpbridge-stop
+
 vscode-wrapper: ## Print path to the VS Code wrapper binary
 	@printf '%s/bin/harness-docker-vscode-wrapper\n' "$$(pwd)"
 
@@ -56,6 +62,7 @@ test: ## Run host-side integration tests
 	@shopt -s nullglob; tests=(test/test-*.sh); for test_file in "$${tests[@]}"; do /bin/bash "$$test_file" || { echo "FAILED: $$test_file" >&2; exit 1; }; done
 	@cd docker-filter-proxy && go test ./...
 	@cd beeper && go test ./...
+	@cd mcpbridge && go test ./...
 
 test-verbose: ## Run tests with bash -x tracing
 	@shopt -s nullglob; tests=(test/test-*.sh); for test_file in "$${tests[@]}"; do /bin/bash -x "$$test_file" || { echo "FAILED: $$test_file" >&2; exit 1; }; done

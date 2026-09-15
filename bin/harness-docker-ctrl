@@ -9,6 +9,10 @@ UPDATE_ROOT="${HARNESS_DOCKER_UPDATE_SOURCE_ROOT:-$PROJECT_DIR}"
 HARNESS_COMPOSE_PROJECT_NAME="${HARNESS_COMPOSE_PROJECT_NAME:-}"
 MIN_API_VERSION=1.44
 BEEPER_PID_FILE="$HOME/.harness-docker-beeper.pid"
+MCPBRIDGE_PID_FILE="$HOME/.harness-docker-mcpbridge.pid"
+MCPBRIDGE_CONFIG="$CONFIG_DIR/mcpbridge.jsonc"
+MCPBRIDGE_BIN="$PROJECT_DIR/mcpbridge/mcpbridge"
+MCPBRIDGE_BUILT=false
 AWS_PROXY_MIGRATION_CHECK=false
 COMPOSE_FILES=()
 TEMP_OVERRIDES=()
@@ -535,6 +539,61 @@ start_beeper() {
 }
 stop_beeper() { if [[ -f "$BEEPER_PID_FILE" ]] && kill -0 "$(cat "$BEEPER_PID_FILE")" 2>/dev/null; then kill "$(cat "$BEEPER_PID_FILE")"; fi; rm -f "$BEEPER_PID_FILE"; }
 
+build_mcpbridge() {
+  [[ "$MCPBRIDGE_BUILT" != true ]] || return 0
+  command -v go >/dev/null || die 'go is required to build mcpbridge'
+  (cd "$PROJECT_DIR/mcpbridge" && go build -o "$MCPBRIDGE_BIN" .)
+  MCPBRIDGE_BUILT=true
+}
+
+mcpbridge_running() {
+  [[ -f "$MCPBRIDGE_PID_FILE" ]] && kill -0 "$(cat "$MCPBRIDGE_PID_FILE")" 2>/dev/null
+}
+
+mcpbridge_configured() {
+  [[ -f "$MCPBRIDGE_CONFIG" ]] || return 1
+  mcpbridge_running || build_mcpbridge
+  local rc=0
+  "$MCPBRIDGE_BIN" configured --config "$MCPBRIDGE_CONFIG" || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) die "invalid mcpbridge config: $MCPBRIDGE_CONFIG" ;;
+  esac
+}
+
+start_mcpbridge() {
+  if mcpbridge_running; then echo 'mcpbridge already running.'; return; fi
+  rm -f "$MCPBRIDGE_PID_FILE"
+  build_mcpbridge
+  mkdir -p "$CONFIG_DIR/logs"
+  "$MCPBRIDGE_BIN" serve --config "$MCPBRIDGE_CONFIG" >> "$CONFIG_DIR/logs/mcpbridge.log" 2>&1 &
+  local pid=$!
+  echo "$pid" > "$MCPBRIDGE_PID_FILE"
+  sleep 0.1
+  if ! kill -0 "$pid" 2>/dev/null; then
+    rm -f "$MCPBRIDGE_PID_FILE"
+    wait "$pid" || true
+    die 'mcpbridge failed to start'
+  fi
+  echo 'mcpbridge started.'
+}
+
+stop_mcpbridge() {
+  if mcpbridge_running; then
+    kill "$(cat "$MCPBRIDGE_PID_FILE")" 2>/dev/null || true
+  fi
+  rm -f "$MCPBRIDGE_PID_FILE"
+}
+
+sync_mcpbridge() {
+  if mcpbridge_configured; then
+    start_mcpbridge
+  else
+    stop_mcpbridge
+  fi
+}
+
 auto_reap_retired() {
   reap_retired_generations || true
 }
@@ -608,6 +667,7 @@ cmd_start() {
       relay_port=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" | sed -n 's/^SSH_RELAY_PORT=//p')
       if [[ -n "$relay_port" ]]; then SSH_RELAY_PORT="$relay_port" start_ssh_relay; fi
     fi
+    sync_mcpbridge
     echo "Generation $current is already running."
     return
   fi
@@ -615,6 +675,7 @@ cmd_start() {
   generation="$STARTED_GENERATION"
   write_current_generation "$generation"
   start_ssh_relay
+  sync_mcpbridge
   echo "Current generation: $generation"
 }
 
@@ -639,10 +700,12 @@ cmd_rebuild() {
   [[ -z "$old" || "$old" == "$generation" ]] || mark_generation_retired "$old"
   reap_retired_generations
   start_ssh_relay
+  sync_mcpbridge
   echo "Current generation: $generation"
 }
 
 cmd_stop() {
+  stop_mcpbridge
   check_docker_api_version
   setup_env
   local generation project rc=0
@@ -728,6 +791,8 @@ Commands:
   gc                    Reap idle retired generations
   beeper-start           Start the host notification beeper
   beeper-stop            Stop the host notification beeper
+  mcpbridge-start         Start the configured host MCP gateway
+  mcpbridge-stop          Stop the host MCP gateway
   version                Print the checkout version
   update [--check]       Update from the remote default branch, or report status
   help                   Show this help
@@ -757,6 +822,8 @@ case "${1:-help}" in
   gc) check_docker_api_version; setup_env; reap_retired_generations ;;
   beeper-start) start_beeper ;;
   beeper-stop) stop_beeper ;;
+  mcpbridge-start) mcpbridge_configured || die 'mcpbridge has no enabled servers'; start_mcpbridge ;;
+  mcpbridge-stop) stop_mcpbridge ;;
   version) harness_version ;;
   update) shift; cmd_update "$@" ;;
   help|-h|--help) usage ;;

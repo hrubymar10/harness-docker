@@ -44,6 +44,12 @@ The controller can start and stop the optional host beeper and invokes a
 configured notifier hook for lifecycle events. Notification setup is documented
 with the user-facing examples when they are added.
 
+When `config/mcpbridge.jsonc` contains an enabled server, `start` and `rebuild`
+also start the optional host MCP gateway. An absent or empty configuration
+stops a previously running gateway, and `stop` always stops it. Use
+`mcpbridge-start` and `mcpbridge-stop` to apply configuration changes without a
+container rebuild. See [Host MCP gateway](mcpbridge.md).
+
 `start` and `build-image` use the full build cache by default. `rebuild` also
 uses the cache, but invalidates the harness-install layers so unpinned CLIs are
 refreshed. Use `--no-cache` with any of those three commands for a full rebuild.

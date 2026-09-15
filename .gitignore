@@ -1,7 +1,9 @@
 beeper/beeper
+mcpbridge/mcpbridge
 
 config/.env
 config/docker-compose.local.yml
+config/mcpbridge.jsonc
 config/*-notifier
 !config/*.example
 config/logs/

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Wrapper that keeps a supervising shell alive around a coding-agent harness
 # so host-side cleanup can always deliver SIGHUP to a process group owned
-# inside the container, including non-TTY callers such as aimebu/IDE wrappers.
+# inside the container, including non-TTY callers such as automation/IDE wrappers.
 
 SESSION_COMMAND=$(basename "$0")
 HARNESS=${SESSION_COMMAND%-session}

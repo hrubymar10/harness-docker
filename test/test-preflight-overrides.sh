@@ -2,7 +2,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP=$(mktemp -d); LOCAL="$ROOT/config/docker-compose.local.yml"; BACKUP=""
-restore() { if [[ -n "$BACKUP" ]]; then mv "$BACKUP" "$LOCAL"; else rm -f "$LOCAL"; fi; rm -rf "$TMP"; }
+restore() {
+  if [[ -f "$TMP/lifecycle-home/.harness-docker-mcpbridge.pid" ]]; then
+    kill "$(cat "$TMP/lifecycle-home/.harness-docker-mcpbridge.pid")" 2>/dev/null || true
+  fi
+  if [[ -n "$BACKUP" ]]; then mv "$BACKUP" "$LOCAL"; else rm -f "$LOCAL"; fi
+  rm -rf "$TMP"
+}
 trap restore EXIT
 if [[ -f "$LOCAL" ]]; then BACKUP="$TMP/local.bak"; mv "$LOCAL" "$BACKUP"; fi
 mkdir -p "$TMP/bin" "$TMP/tmp"
@@ -134,4 +140,106 @@ if grep -Fq -- 'HARNESS_REFRESH=' "$TMP/image-no-cache.build"; then exit 1; fi
 
 if env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" rebuild --bogus > "$TMP/bogus.out" 2>&1; then exit 1; fi
 grep -Fq 'usage: harness-docker-ctrl rebuild [--no-cache]' "$TMP/bogus.out"
+
+# Optional mcpbridge follows start/rebuild configuration and is always stopped.
+mkdir -p "$life_root/mcpbridge"
+cat > "$TMP/mcpbridge-mock" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+case "$1" in
+  configured)
+    [[ "$2" == --config ]]
+    if grep -q 'INVALID' "$3"; then exit 2; fi
+    if grep -Eq '"servers"[[:space:]]*:[[:space:]]*\[\]' "$3"; then exit 1; fi
+    if grep -Eq '"enabled"[[:space:]]*:[[:space:]]*false' "$3"; then exit 1; fi
+    ;;
+  serve)
+    [[ "$2" == --config && -f "$3" ]]
+    printf 'mcpbridge stdout\n'
+    printf 'mcpbridge stderr\n' >&2
+    trap 'printf "stopped\n" >> "$MOCK_STOP_LOG"; exit 0' TERM INT
+    while :; do sleep 1; done
+    ;;
+  *) exit 2 ;;
+esac
+EOF
+cat > "$TMP/bin/go" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+[[ "$1" == build ]]
+printf 'build\n' >> "$MOCK_GO_LOG"
+while (($#)); do
+  if [[ "$1" == -o ]]; then output="$2"; break; fi
+  shift
+done
+cp "$MOCK_MCPBRIDGE_TEMPLATE" "$output.tmp"
+chmod +x "$output.tmp"
+mv "$output.tmp" "$output"
+EOF
+chmod +x "$TMP/mcpbridge-mock" "$TMP/bin/go"
+export MOCK_MCPBRIDGE_TEMPLATE="$TMP/mcpbridge-mock"
+export MOCK_GO_LOG="$TMP/mcpbridge-go.log"
+export MOCK_STOP_LOG="$TMP/mcpbridge-stop.log"
+: > "$MOCK_STOP_LOG"
+mcp_pid_file="$life_home/.harness-docker-mcpbridge.pid"
+
+wait_for_stop_count() {
+  local want="$1" count attempts=20
+  while ((attempts-- > 0)); do
+    count=$(wc -l < "$MOCK_STOP_LOG" 2>/dev/null || true)
+    [[ "${count:-0}" -ge "$want" ]] && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+# An absent config stops a stale process without attempting a build.
+cp "$TMP/mcpbridge-mock" "$life_root/mcpbridge/mcpbridge"
+chmod +x "$life_root/mcpbridge/mcpbridge"
+"$life_root/mcpbridge/mcpbridge" serve --config "$ROOT/config/mcpbridge.jsonc.example" >/dev/null 2>&1 &
+absent_mcp_pid=$!
+printf '%s\n' "$absent_mcp_pid" > "$mcp_pid_file"
+env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" start > "$TMP/mcp-absent.out"
+wait "$absent_mcp_pid" || true
+wait_for_stop_count 1
+[[ ! -f "$mcp_pid_file" ]] && ! kill -0 "$absent_mcp_pid" 2>/dev/null
+
+printf '%s\n' '{"servers":[{"name":"fake","command":"fake"}]}' > "$life_root/config/mcpbridge.jsonc"
+if ! env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" start > "$TMP/mcp-start.out" 2>&1; then
+  cat "$TMP/mcp-start.out" >&2
+  exit 1
+fi
+[[ -f "$mcp_pid_file" ]] || { cat "$TMP/mcp-start.out" >&2; exit 1; }
+kill -0 "$(cat "$mcp_pid_file")"
+first_mcp_pid=$(cat "$mcp_pid_file")
+grep -Fq 'mcpbridge stdout' "$life_root/config/logs/mcpbridge.log"
+grep -Fq 'mcpbridge stderr' "$life_root/config/logs/mcpbridge.log"
+[[ "$(wc -l < "$MOCK_GO_LOG")" -eq 1 ]]
+env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" start > "$TMP/mcp-start-again.out"
+[[ "$(cat "$mcp_pid_file")" == "$first_mcp_pid" ]]
+[[ "$(wc -l < "$MOCK_GO_LOG")" -eq 1 ]]
+
+printf '%s\n' '{"servers":[]}' > "$life_root/config/mcpbridge.jsonc"
+env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" start > "$TMP/mcp-empty.out"
+wait_for_stop_count 2
+[[ ! -f "$mcp_pid_file" ]]
+
+printf '%s\n' '{"servers":[{"name":"fake","command":"fake"}]}' > "$life_root/config/mcpbridge.jsonc"
+if ! env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" rebuild > "$TMP/mcp-rebuild.out" 2>&1; then
+  cat "$TMP/mcp-rebuild.out" >&2
+  exit 1
+fi
+[[ -f "$mcp_pid_file" ]] || { cat "$TMP/mcp-rebuild.out" >&2; exit 1; }
+kill -0 "$(cat "$mcp_pid_file")"
+rebuild_mcp_pid=$(cat "$mcp_pid_file")
+[[ "$(wc -l < "$MOCK_GO_LOG")" -eq 2 ]]
+
+printf '%s\n' 'INVALID' > "$life_root/config/mcpbridge.jsonc"
+if env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" start > "$TMP/mcp-invalid.out" 2>&1; then exit 1; fi
+grep -Fq 'invalid mcpbridge config' "$TMP/mcp-invalid.out"
+kill -0 "$rebuild_mcp_pid"
+
+if env "${life_common[@]}" MOCK_API=1.43 "$life_root/bin/harness-docker-ctrl" stop > "$TMP/mcp-stop.out" 2>&1; then exit 1; fi
+wait_for_stop_count 3
+[[ ! -f "$mcp_pid_file" ]]
 echo 'controller preflight overrides: ok'

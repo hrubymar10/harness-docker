@@ -1,0 +1,17 @@
+{
+  // The gateway is reachable from the sandbox as
+  // http://host.docker.internal:9976/mcp.
+  "listen": "127.0.0.1:9976",
+  "allow_list": ["127.0.0.0/8", "::1/128"],
+  "servers": [
+    {
+      "name": "xcode",
+      "command": "xcrun",
+      "args": ["mcpbridge"],
+      "env": {},
+      "enabled": true
+      /* Add ,"cwd": "/absolute/path/to/a/project" when the server needs a
+         specific working directory. */
+    }
+  ]
+}
