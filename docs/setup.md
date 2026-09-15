@@ -92,9 +92,16 @@ When `SSH_AUTH_SOCK` points at a socket, the controller keeps a `socat` relay on
 `127.0.0.1:19922` (override with `SSH_RELAY_PORT` in `config/.env`) that bridges
 the host agent, and the container entrypoint exposes it as `/tmp/ssh-agent.sock`.
 No private key enters the sandbox; revoke access by stopping the host agent. The
-relay's PID file lives at `~/.harness-docker-ssh-relay.pid` unless
-`SSH_RELAY_PID_FILE` says otherwise. A port already served by another process is
-reused rather than replaced.
+relay runs detached from the terminal that started it and records its PID at
+`~/.harness-docker-ssh-relay.pid` unless `SSH_RELAY_PID_FILE` says otherwise.
+
+Every launch, and `harness-docker-ctrl start` while a generation is already
+running, restores the relay without touching sessions: a relay that died, or one
+whose agent socket no longer exists, is replaced. Launches use the port the
+running container was started with, so a changed `SSH_RELAY_PORT` takes effect
+on the next `start`. A port served by any other process, including a relay of a
+standalone legacy stack, is reused as is and never stopped. The PID file is per
+user, so several checkouts on one host share one relay.
 
 ## Starting the stack
 

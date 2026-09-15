@@ -584,7 +584,7 @@ show_legacy_stack_notice() {
 }
 
 cmd_start() {
-  local no_cache=false current generation
+  local no_cache=false current generation container_id relay_port
   (($# <= 1)) || die 'usage: harness-docker-ctrl start [--no-cache]'
   case "${1:-}" in
     '') ;;
@@ -594,10 +594,15 @@ cmd_start() {
   show_legacy_stack_notice
   check_docker_api_version; AWS_PROXY_MIGRATION_CHECK=true; setup_env; AWS_PROXY_MIGRATION_CHECK=false
   auto_reap_retired
-  if current=$(read_current_generation 2>/dev/null) && [[ -n "$(generation_agent_container_id "$current")" ]]; then
+  if current=$(read_current_generation 2>/dev/null) \
+    && container_id=$(generation_agent_container_id "$current") && [[ -n "$container_id" ]]; then
     if offer_running_rebuild "$current"; then
       if [[ "$no_cache" == true ]]; then cmd_rebuild true --no-cache; else cmd_rebuild true; fi
       return
+    fi
+    if [[ -S "${SSH_AUTH_SOCK:-}" ]]; then
+      relay_port=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" | sed -n 's/^SSH_RELAY_PORT=//p')
+      if [[ -n "$relay_port" ]]; then SSH_RELAY_PORT="$relay_port" start_ssh_relay; fi
     fi
     echo "Generation $current is already running."
     return

@@ -7,6 +7,8 @@ HARNESS_DOCKER_ROOT="$(cd "$_LAUNCH_LIB_DIR/../.." && pwd)"
 source "$_LAUNCH_LIB_DIR/harness.sh"
 # shellcheck source=bin/lib/generations.sh
 source "$_LAUNCH_LIB_DIR/generations.sh"
+# shellcheck source=bin/lib/ssh-relay.sh
+source "$_LAUNCH_LIB_DIR/ssh-relay.sh"
 
 _load_harness_env() {
   local env_file="$HARNESS_DOCKER_ROOT/config/.env" line key value
@@ -50,7 +52,7 @@ _die() {
 harness_main() {
   local script_path derived_harness container_id status workdir mounts mounted source_path
   local docker_user session_id exit_code launch_flags_variable launch_flags_was_set
-  local launch_flags_host_value
+  local launch_flags_host_value relay_port
   local -a docker_flags launch_flags
 
   script_path=$(_launcher_script_path "$0")
@@ -91,6 +93,12 @@ harness_main() {
   if [[ "$status" != running ]]; then
     _die "Harness container is $status. Run: bin/harness-docker-ctrl start"
     return 1
+  fi
+  # The container dials the port it was started with, so the heal uses that
+  # one rather than the current config/.env value.
+  if [[ -S "${SSH_AUTH_SOCK:-}" ]]; then
+    relay_port=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" | sed -n 's/^SSH_RELAY_PORT=//p')
+    if [[ -n "$relay_port" ]]; then SSH_RELAY_PORT="$relay_port" start_ssh_relay --quiet; fi
   fi
 
   workdir=$(pwd)
