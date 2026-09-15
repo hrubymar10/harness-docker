@@ -93,6 +93,7 @@ RUN mkdir -p "$(dirname ${HOST_HOME})" \
     -s ${CONTAINER_SHELL} \
     ${HOST_USER} \
     && echo "${HOST_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+ENV HOST_UID="${HOST_UID}" HOST_USER="${HOST_USER}" HOST_HOME="${HOST_HOME}"
 
 # ── Useful language tooling (LSP servers) ──────────────────────────
 RUN npm install -g typescript typescript-language-server pyright

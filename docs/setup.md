@@ -6,6 +6,9 @@ installs shared profile configuration, and runs the requested command as that
 user. This keeps absolute project paths, Git ownership, and shell behavior
 consistent across the host and sandbox.
 
+The image keeps that build-time identity as its default for an environment-free
+direct `docker run`; Compose supplies the same settings explicitly at runtime.
+
 The setup scripts also:
 
 - assemble `PATH` from system tools, the repository launchers, custom binaries,

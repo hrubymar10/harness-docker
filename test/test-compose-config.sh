@@ -4,6 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 home="$TMP/home"; mkdir -p "$home"/{.claude,.codex,.pi/agent,.vibe,.config/opencode,.local/share/opencode,go/pkg}
 common=(PATH="$PATH" HOME="$home" DOCKER_CONFIG="${DOCKER_CONFIG:-$HOME/.docker}" HOST_UID=1000 HOST_USER=tester HOST_HOME="$home" GO_VERSION=go1.26.0 GOPATH="$home/go" CLAUDE_CONFIG_DIR_HOST="$home/.claude" CODEX_HOME_HOST="$home/.codex" PI_CODING_AGENT_DIR_HOST="$home/.pi/agent" VIBE_HOME_HOST="$home/.vibe" OPENCODE_CONFIG_DIR_HOST="$home/.config/opencode" OPENCODE_DATA_DIR_HOST="$home/.local/share/opencode")
+grep -Fq 'ENV HOST_UID="${HOST_UID}" HOST_USER="${HOST_USER}" HOST_HOME="${HOST_HOME}"' Dockerfile
 for files in '-f docker-compose.yml' '-f docker-compose.yml -f config/docker-compose.local.example.yml'; do
   read -r -a compose_files <<< "$files"
   env -i "${common[@]}" docker compose --env-file /dev/null "${compose_files[@]}" config > "$TMP/out" 2> "$TMP/err"
