@@ -48,9 +48,8 @@ _ssh_relay_wait_exit() {
   return 1
 }
 
-# start_ssh_relay [--quiet]: --quiet suppresses the port-reuse notice, which a
-# launcher would otherwise repeat on every session while another process
-# serves the port.
+# start_ssh_relay [--quiet]: --quiet suppresses relay warnings and notices that
+# a launcher would otherwise repeat on every session.
 start_ssh_relay() {
   local pid_file port quiet=false pid
   [[ "${1:-}" != --quiet ]] || quiet=true
@@ -61,9 +60,9 @@ start_ssh_relay() {
   if _ssh_relay_is_relay "$pid"; then
     _ssh_relay_usable "$pid" && return 0
     kill "$pid" 2>/dev/null
-    _ssh_relay_wait_exit "$pid" || { echo "Warning: relay $pid did not stop; SSH relay not restarted." >&2; return; }
+    _ssh_relay_wait_exit "$pid" || { $quiet || echo "Warning: relay $pid did not stop; SSH relay not restarted." >&2; return; }
   fi
-  command -v socat >/dev/null || { echo 'Warning: socat not found; SSH relay disabled.' >&2; return; }
+  command -v socat >/dev/null || { $quiet || echo 'Warning: socat not found; SSH relay disabled.' >&2; return; }
   if _ssh_relay_port_served; then
     $quiet || echo "SSH relay port $port is already served; reusing it." >&2
     return 0

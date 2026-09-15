@@ -107,6 +107,42 @@ wait_for() { local i; for ((i = 0; i < 50; i++)); do eval "$1" && return 0; slee
 launch() { (cd "$TMP/work/project"; HOME="$relay_home" SSH_AUTH_SOCK="$AGENT_SOCK" "$ROOT/bin/pi-docker" --version); }
 relay_line() { printf 'TCP-LISTEN:%s,fork,reuseaddr,bind=127.0.0.1 UNIX-CONNECT:%s' "$1" "$2"; }
 
+# Quiet launcher heals suppress non-fatal relay warnings; controller-style
+# calls without --quiet retain them.
+HOME="$relay_home" SSH_AUTH_SOCK="$AGENT_SOCK" bash -c '
+  source "$1/bin/lib/ssh-relay.sh"
+  command() { if [[ "$1" == -v && "$2" == socat ]]; then return 1; fi; builtin command "$@"; }
+  start_ssh_relay --quiet
+' sh "$ROOT" > "$TMP/missing-quiet.out" 2>&1
+[[ ! -s "$TMP/missing-quiet.out" ]]
+HOME="$relay_home" SSH_AUTH_SOCK="$AGENT_SOCK" bash -c '
+  source "$1/bin/lib/ssh-relay.sh"
+  command() { if [[ "$1" == -v && "$2" == socat ]]; then return 1; fi; builtin command "$@"; }
+  start_ssh_relay
+' sh "$ROOT" > "$TMP/missing-loud.out" 2>&1
+grep -Fq 'Warning: socat not found; SSH relay disabled.' "$TMP/missing-loud.out"
+
+printf '123\n' > "$TMP/stuck-relay.pid"
+HOME="$relay_home" SSH_AUTH_SOCK="$AGENT_SOCK" SSH_RELAY_PID_FILE="$TMP/stuck-relay.pid" bash -c '
+  source "$1/bin/lib/ssh-relay.sh"
+  _ssh_relay_is_relay() { return 0; }
+  _ssh_relay_usable() { return 1; }
+  kill() { return 0; }
+  _ssh_relay_wait_exit() { return 1; }
+  start_ssh_relay --quiet
+' sh "$ROOT" > "$TMP/stuck-quiet.out" 2>&1
+[[ ! -s "$TMP/stuck-quiet.out" ]]
+HOME="$relay_home" SSH_AUTH_SOCK="$AGENT_SOCK" SSH_RELAY_PID_FILE="$TMP/stuck-relay.pid" bash -c '
+  source "$1/bin/lib/ssh-relay.sh"
+  _ssh_relay_is_relay() { return 0; }
+  _ssh_relay_usable() { return 1; }
+  kill() { return 0; }
+  _ssh_relay_wait_exit() { return 1; }
+  start_ssh_relay
+' sh "$ROOT" > "$TMP/stuck-loud.out" 2>&1
+grep -Fq 'Warning: relay 123 did not stop; SSH relay not restarted.' "$TMP/stuck-loud.out"
+rm -f "$TMP/stuck-relay.pid"
+
 (cd "$TMP/work/project"; env -u SSH_AUTH_SOCK HOME="$relay_home" "$ROOT/bin/pi-docker" --version >/dev/null)
 [[ ! -s "$SOCAT_LOG" && ! -f "$PID_FILE" ]]
 MOCK_RELAY_PORT= launch >/dev/null
