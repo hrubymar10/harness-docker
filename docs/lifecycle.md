@@ -38,7 +38,7 @@ path for editor integrations.
 - `rebuild [--no-cache]` refreshes harness installs on cached base layers,
   starts, health-checks, and switches to a replacement;
 - `build-image [--no-cache]` builds without starting a generation; and
-- `gc` removes retired generations only when they have no live session PIDs.
+- `gc` removes non-current generations when they have no fresh host-side session heartbeats.
 
 The controller can start and stop the optional host beeper and invokes a
 configured notifier hook for lifecycle events. Notification setup is documented

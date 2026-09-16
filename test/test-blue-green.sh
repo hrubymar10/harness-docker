@@ -20,6 +20,10 @@ case "$1" in
       awk -F'|' '{print $1}' "$MOCK_CONTAINERS"
     fi
     ;;
+  inspect)
+    container="${*: -1}"
+    awk -F'|' -v container="$container" '$2 == container {print $1}' "$MOCK_CONTAINERS"
+    ;;
   exec)
     shift
     while [[ "${1:-}" == -* ]]; do
@@ -27,11 +31,7 @@ case "$1" in
       shift
     done
     container="$1"; shift
-    if [[ "$*" == *'echo "$#"'* ]]; then
-      shopt -s nullglob
-      files=("$MOCK_SESSIONS/$container"/*-session-*.pid)
-      echo "${#files[@]}"
-    elif [[ "$*" == *'kill -HUP'* ]]; then
+    if [[ "$*" == *'kill -HUP'* ]]; then
       pidfile="${*: -1}"
       rm -f "$MOCK_SESSIONS/$container/$(basename "$pidfile")"
       echo pidfile_found
@@ -71,53 +71,91 @@ assert_eq() {
   [[ "$1" == "$2" ]] || { echo "assertion failed: got '$1', want '$2'" >&2; exit 1; }
 }
 
-printf '%s\n' 'harness-docker-gold|container-old' 'harness-docker-gnew|container-new' > "$MOCK_CONTAINERS"
-mkdir -p "$MOCK_SESSIONS/container-old" "$MOCK_SESSIONS/container-new"
+down_count() {
+  wc -l < "$MOCK_DOWN_CALLS" | tr -d ' '
+}
 
+heartbeat_mtime() {
+  _heartbeat_mtime "$1"
+}
+
+# A launcher pins a container, and its generation comes from that container's
+# immutable Compose label rather than the mutable current pointer.
+printf '%s\n' 'harness-docker-gold|container-old' > "$MOCK_CONTAINERS"
+mkdir -p "$MOCK_SESSIONS/container-old" "$MOCK_SESSIONS/container-new"
 write_current_generation old
-touch "$MOCK_SESSIONS/container-old/claude-session-pinned.pid"
 pinned=$(current_agent_container_id)
+assert_eq "$(container_generation "$pinned")" old
 write_current_generation new
 assert_eq "$pinned" container-old
-assert_eq "$(current_agent_container_id)" container-new
-rm -f "$MOCK_SESSIONS/container-old/claude-session-pinned.pid"
 
-mark_generation_retired old
+# The current pointer is protected even before its first session heartbeat.
+write_current_generation old
 reap_retired_generations
-assert_eq "$(wc -l < "$MOCK_DOWN_CALLS" | tr -d ' ')" 1
+assert_eq "$(down_count)" 0
+
+# A discovered non-current generation with no heartbeat is reaped without a
+# retirement marker.
+printf '%s\n' 'harness-docker-gold|container-old' 'harness-docker-gnew|container-new' > "$MOCK_CONTAINERS"
+write_current_generation new
+reap_retired_generations
+assert_eq "$(down_count)" 1
 assert_eq "$(tail -n 1 "$MOCK_DOWN_CALLS")" harness-docker-gold
-[[ ! -f "$TEST_ROOT/config/.retired-generations/old" ]]
 
+# A fresh heartbeat protects a non-current generation and counts as one live
+# session. Once stale, that same generation is reaped and its directory pruned.
 printf '%s\n' 'harness-docker-gold|container-old' >> "$MOCK_CONTAINERS"
-touch "$MOCK_SESSIONS/container-old/claude-session-last.pid"
-mark_generation_retired old
+mkdir -p "$TEST_ROOT/config/.generations/old"
+touch "$TEST_ROOT/config/.generations/old/live.hb"
+assert_eq "$(generation_session_count old)" 1
+heartbeat_age=$(generation_last_heartbeat_age old)
+((heartbeat_age < _SESSION_HEARTBEAT_STALE_AFTER_SECONDS))
 reap_retired_generations
-assert_eq "$(wc -l < "$MOCK_DOWN_CALLS" | tr -d ' ')" 1
-[[ -f "$TEST_ROOT/config/.retired-generations/old" ]]
+assert_eq "$(down_count)" 1
+touch -t 200001010000 "$TEST_ROOT/config/.generations/old/live.hb"
+assert_eq "$(generation_session_count old)" 0
+reap_retired_generations
+assert_eq "$(down_count)" 2
+[[ ! -d "$TEST_ROOT/config/.generations/old" ]]
 
+# Reaping is idempotent after Compose no longer reports the generation.
+reap_retired_generations
+reap_retired_generations
+assert_eq "$(down_count)" 2
+
+# Normal cleanup removes its fresh heartbeat before reaping, so a session that
+# exits cleanly never protects an abandoned generation for the stale timeout.
+printf '%s\n' 'harness-docker-gold|container-old' >> "$MOCK_CONTAINERS"
+mkdir -p "$TEST_ROOT/config/.generations/old"
+touch "$TEST_ROOT/config/.generations/old/clean.hb"
+touch "$MOCK_SESSIONS/container-old/claude-session-clean.pid"
 export HARNESS=claude
-run_session_cleanup container-old last test-user
-assert_eq "$(wc -l < "$MOCK_DOWN_CALLS" | tr -d ' ')" 2
-assert_eq "$(tail -n 1 "$MOCK_DOWN_CALLS")" harness-docker-gold
-[[ ! -f "$TEST_ROOT/config/.retired-generations/old" ]]
+before_clean_exit=$(down_count)
+run_session_cleanup container-old clean old test-user
+[[ ! -f "$TEST_ROOT/config/.generations/old/clean.hb" ]]
+assert_eq "$(down_count)" "$((before_clean_exit + 1))"
 
-reap_retired_generations
-reap_retired_generations
-assert_eq "$(wc -l < "$MOCK_DOWN_CALLS" | tr -d ' ')" 2
-
-# --- watchdog cleanup path also reaps a retired, idle generation ---
+# The watchdog creates a heartbeat before detaching, refreshes it on cadence
+# only while the exact parent identity lives, then removes it before reaping.
 printf '%s\n' 'harness-docker-gold|container-old' >> "$MOCK_CONTAINERS"
-mark_generation_retired old
-wd_before=$(wc -l < "$MOCK_DOWN_CALLS" | tr -d ' ')
+touch "$MOCK_SESSIONS/container-old/claude-session-wd-sess.pid"
 _spawn_detached() { WD_SCRIPT="$1"; shift; WD_ARGS=("$@"); }
-export HARNESS=claude
+_SESSION_HEARTBEAT_INTERVAL_SECONDS=0.1
 sleep 60 & wd_parent=$!
-start_session_watchdog container-old wd-sess "$wd_parent" test-user
+start_session_watchdog container-old wd-sess "$wd_parent" old test-user
+heartbeat="$TEST_ROOT/config/.generations/old/wd-sess.hb"
+[[ -f "$heartbeat" ]]
+initial_mtime=$(heartbeat_mtime "$heartbeat")
+bash -c "$WD_SCRIPT" sh "${WD_ARGS[@]}" >/dev/null 2>&1 & watchdog_runner=$!
+sleep 1.1
+refreshed_mtime=$(heartbeat_mtime "$heartbeat")
+((refreshed_mtime > initial_mtime))
+before_clean_exit=$(down_count)
 kill "$wd_parent" 2>/dev/null || true
 wait "$wd_parent" 2>/dev/null || true
-bash -c "$WD_SCRIPT" sh "${WD_ARGS[@]}" >/dev/null 2>&1 || true
-assert_eq "$(wc -l < "$MOCK_DOWN_CALLS" | tr -d ' ')" "$((wd_before + 1))"
+wait "$watchdog_runner"
+[[ ! -f "$heartbeat" ]]
+assert_eq "$(down_count)" "$((before_clean_exit + 1))"
 assert_eq "$(tail -n 1 "$MOCK_DOWN_CALLS")" harness-docker-gold
-[[ ! -f "$TEST_ROOT/config/.retired-generations/old" ]]
 
 echo 'blue-green generation guarantees: ok'

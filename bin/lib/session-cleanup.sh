@@ -2,8 +2,8 @@
 # The detached snippets are intentionally single-quoted for later expansion.
 # shellcheck disable=SC2016
 # Session cleanup for harness-docker wrappers.
-# Set HARNESS, then call: start_session_watchdog <container> <session_id> <parent_pid> [user]
-# and after docker exec: run_session_cleanup <container> <session_id> [user]
+# Set HARNESS, then call: start_session_watchdog <container> <session_id> <parent_pid> <generation> [user]
+# and after docker exec: run_session_cleanup <container> <session_id> <generation> [user]
 # Call reap_stale_sessions <container> [user] before starting a new session to
 # sweep sessions whose host client died without cleanup (host crash/reboot, or
 # a pre-fix watchdog that was killed together with the terminal).
@@ -38,6 +38,17 @@ _session_pidfile() {
 # the watchdog instead of leaving it polling a dead (or recycled) parent PID.
 _watchdog_pidfile() {
   printf '/tmp/harness-docker-watchdog-%s-%s.pid' "$1" "$2"
+}
+
+_session_heartbeat_file() {
+  printf '%s/%s/%s.hb' "$_GENERATIONS_DIR" "$1" "$2"
+}
+
+_remove_session_heartbeat() {
+  local generation="$1" session_id="$2" heartbeat
+  heartbeat=$(_session_heartbeat_file "$generation" "$session_id")
+  rm -f "$heartbeat"
+  rmdir "$(dirname "$heartbeat")" 2>/dev/null || true
 }
 
 _session_debug_log_file() {
@@ -108,10 +119,14 @@ exec("bash", "-c", $ARGV[0], "sh", @ARGV[1..$#ARGV]);
 }
 
 start_session_watchdog() {
-  local container="$1" session_id="$2" parent_pid="$3" user pidfile watchdog_pidfile log_file parent_start
-  user=$(_container_user "${4:-}")
+  local container="$1" session_id="$2" parent_pid="$3" generation="$4" user pidfile watchdog_pidfile heartbeat_file log_file parent_start
+  _valid_generation "$generation" || return 1
+  user=$(_container_user "${5:-}")
   pidfile=$(_session_pidfile "$session_id")
   watchdog_pidfile=$(_watchdog_pidfile "$HARNESS" "$session_id")
+  heartbeat_file=$(_session_heartbeat_file "$generation" "$session_id")
+  mkdir -p "$(dirname "$heartbeat_file")"
+  touch "$heartbeat_file"
   # The watchdog is fully detached, so resolve the path and create the log
   # dir up front; its own appends stay best-effort (stderr is /dev/null).
   log_file=$(_session_debug_log_file)
@@ -130,16 +145,25 @@ start_session_watchdog() {
     user="$7"
     idle_stop_snippet="$8"
     genlib="$9"
+    heartbeat_file="${10}"
+    heartbeat_interval="${11}"
     echo $$ > "$watchdog_pidfile"
-    trap "rm -f \$watchdog_pidfile" EXIT
+    cleanup_heartbeat() {
+      rm -f "$heartbeat_file"
+      rmdir "$(dirname "$heartbeat_file")" 2>/dev/null || true
+    }
+    trap "cleanup_heartbeat; rm -f \$watchdog_pidfile" EXIT
     trap "exit 0" HUP INT TERM
     log() {
       printf "%s %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >> "$log_file"
     }
     log "watchdog_spawned session_pidfile=$pidfile parent_pid=$parent_pid container=$container"
     while [ -n "$parent_start" ] && [ "$(ps -o lstart= -p "$parent_pid" 2>/dev/null)" = "$parent_start" ]; do
-      sleep 0.5
+      sleep "$heartbeat_interval"
+      [ "$(ps -o lstart= -p "$parent_pid" 2>/dev/null)" = "$parent_start" ] || break
+      touch "$heartbeat_file"
     done
+    cleanup_heartbeat
     log "watchdog_parent_dead parent_pid=$parent_pid"
     for ((attempt = 0; attempt < 20; attempt++)); do
       result=$(docker exec "$container" sh -c '"'"'
@@ -165,14 +189,19 @@ start_session_watchdog() {
       sleep 0.25
     done
     log "watchdog_cleanup_gave_up pidfile=$pidfile"
-  ' "$parent_pid" "$container" "$pidfile" "$log_file" "$parent_start" "$watchdog_pidfile" "$user" "$_IDLE_STOP_SNIPPET" "$_SESSION_CLEANUP_LIB_DIR/generations.sh"
+    if [ -f "$genlib" ]; then
+      ( . "$genlib" && reap_retired_generations ) >/dev/null 2>&1 \
+        && log "watchdog_reaped_retired_generations" || true
+    fi
+  ' "$parent_pid" "$container" "$pidfile" "$log_file" "$parent_start" "$watchdog_pidfile" "$user" "$_IDLE_STOP_SNIPPET" "$_SESSION_CLEANUP_LIB_DIR/generations.sh" "$heartbeat_file" "$_SESSION_HEARTBEAT_INTERVAL_SECONDS"
 }
 
 run_session_cleanup() {
-  local container="$1" session_id="$2" user
-  user=$(_container_user "${3:-}")
+  local container="$1" session_id="$2" generation="$3" user
+  user=$(_container_user "${4:-}")
   _session_debug_log "run_session_cleanup session_id=$session_id"
   _do_session_cleanup "$container" "$session_id" || true
+  _remove_session_heartbeat "$generation" "$session_id"
   _kill_watchdog "$HARNESS" "$session_id"
   _stop_daemon_if_idle "$container" "$user"
   # A blue-green rebuild may have retired this session's generation. Reap

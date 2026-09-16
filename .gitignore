@@ -11,7 +11,7 @@ config/custom-bin/*
 !config/custom-bin/.gitkeep
 config/.current-generation
 config/.current-generation.tmp.*
-config/.retired-generations/
+config/.generations/
 config/.legacy-notice-shown
 
 gpg-keys/*

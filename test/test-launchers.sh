@@ -23,6 +23,7 @@ case "$1" in
     case "$*" in
       *State.Status*) echo running ;;
       *Config.Env*) [[ -z "${MOCK_RELAY_PORT:-}" ]] || printf 'SSH_RELAY_HOST=host.docker.internal\nSSH_RELAY_PORT=%s\n' "$MOCK_RELAY_PORT" ;;
+      *com.docker.compose.project*) echo harness-docker-gmanual ;;
       *) echo "$MOUNT" ;;
     esac
     ;;

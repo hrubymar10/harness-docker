@@ -674,6 +674,7 @@ cmd_start() {
   start_generation "$no_cache" false
   generation="$STARTED_GENERATION"
   write_current_generation "$generation"
+  reap_retired_generations
   start_ssh_relay
   sync_mcpbridge
   echo "Current generation: $generation"
@@ -697,7 +698,6 @@ cmd_rebuild() {
   start_generation "$no_cache" true
   generation="$STARTED_GENERATION"
   write_current_generation "$generation"
-  [[ -z "$old" || "$old" == "$generation" ]] || mark_generation_retired "$old"
   reap_retired_generations
   start_ssh_relay
   sync_mcpbridge
@@ -713,7 +713,8 @@ cmd_stop() {
     [[ -n "$generation" ]] || continue; project=$(generation_project_name "$generation")
     echo "Stopping $project..."
     if docker compose -p "$project" -f "$PROJECT_DIR/docker-compose.yml" down; then
-      rm -f "$_RETIRED_GENERATIONS_DIR/$generation"
+      rm -f "$_GENERATIONS_DIR/$generation"/*.hb
+      rmdir "$_GENERATIONS_DIR/$generation" 2>/dev/null || true
     else
       rc=1
     fi
@@ -744,16 +745,22 @@ cmd_status() {
   check_docker_api_version
   setup_env
   auto_reap_retired
-  local current="" generation project cid version retired sessions marker
+  local current="" generation project cid version sessions heartbeat_age last_heartbeat marker
   current=$(read_current_generation 2>/dev/null || true)
-  printf '%-2s %-42s %-22s %-8s %-8s\n' '' PROJECT VERSION RETIRED SESSIONS
+  printf '%-2s %-42s %-22s %-8s %-16s\n' '' PROJECT VERSION SESSIONS LAST_HEARTBEAT
   while IFS= read -r generation; do
     [[ -n "$generation" ]] || continue; project=$(generation_project_name "$generation")
     cid=$(generation_agent_container_id "$generation" || true)
     version='-'; [[ -z "$cid" ]] || version=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$cid" 2>/dev/null || printf '?')
-    retired=no; generation_is_retired "$generation" && retired=yes
-    sessions=$(generation_session_count "$generation"); marker=' '; [[ "$generation" != "$current" ]] || marker='*'
-    printf '%-2s %-42s %-22s %-8s %-8s\n' "$marker" "$project" "$version" "$retired" "$sessions"
+    sessions=$(generation_session_count "$generation")
+    if heartbeat_age=$(generation_last_heartbeat_age "$generation"); then
+      last_heartbeat="${heartbeat_age}s"
+      ((heartbeat_age < _SESSION_HEARTBEAT_STALE_AFTER_SECONDS)) || last_heartbeat+=" (stale)"
+    else
+      last_heartbeat='-'
+    fi
+    marker=' '; [[ "$generation" != "$current" ]] || marker='*'
+    printf '%-2s %-42s %-22s %-8s %-16s\n' "$marker" "$project" "$version" "$sessions" "$last_heartbeat"
   done < <(list_generations)
   [[ -n "$(list_generations)" ]] || echo 'No generations.'
 }

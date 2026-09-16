@@ -20,7 +20,17 @@ done
 mkdir -p "$TMP/work"; cat > "$TMP/bin/docker" <<'EOF'
 #!/bin/bash
 printf '%q ' "$@" >> "$LOG"; printf '\n' >> "$LOG"
-case "$1" in info) ;; ps) echo cid ;; inspect) [[ "$*" == *State.Status* ]] && echo running || echo "$MOUNT" ;; exec) [[ "$*" == *'echo "$#"'* ]] && echo 0 || echo stream ;; esac
+case "$1" in
+  info) ;;
+  ps) echo cid ;;
+  inspect)
+    if [[ "$*" == *State.Status* ]]; then echo running
+    elif [[ "$*" == *com.docker.compose.project* ]]; then echo harness-docker-gmanual
+    else echo "$MOUNT"
+    fi
+    ;;
+  exec) [[ "$*" == *'echo "$#"'* ]] && echo 0 || echo stream ;;
+esac
 EOF
 chmod +x "$TMP/bin/docker"
 printf 'manual\n' > "$POINTER"

@@ -5,7 +5,9 @@ if [[ -z "${HARNESS_DOCKER_ROOT:-}" ]]; then
 fi
 
 _GENERATION_POINTER="$HARNESS_DOCKER_ROOT/config/.current-generation"
-_RETIRED_GENERATIONS_DIR="$HARNESS_DOCKER_ROOT/config/.retired-generations"
+_GENERATIONS_DIR="$HARNESS_DOCKER_ROOT/config/.generations"
+_SESSION_HEARTBEAT_INTERVAL_SECONDS=15
+_SESSION_HEARTBEAT_STALE_AFTER_SECONDS=60
 
 _valid_generation() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
@@ -40,14 +42,42 @@ clear_current_generation() {
   rm -f "$_GENERATION_POINTER"
 }
 
-generation_is_retired() {
-  local generation="$1"
+generation_session_count() {
+  local generation="$1" heartbeat count=0 now mtime age
   _valid_generation "$generation" || return 1
-  [[ -f "$_RETIRED_GENERATIONS_DIR/$generation" ]]
+  now=$(date +%s)
+  for heartbeat in "$_GENERATIONS_DIR/$generation"/*.hb; do
+    [[ -f "$heartbeat" ]] || continue
+    mtime=$(_heartbeat_mtime "$heartbeat") || continue
+    age=$((now - mtime))
+    ((age < _SESSION_HEARTBEAT_STALE_AFTER_SECONDS)) && ((count++)) || true
+  done
+  printf '%s' "$count"
 }
 
-generation_session_count() {
-  _generation_session_count "$1"
+generation_last_heartbeat_age() {
+  local generation="$1" heartbeat now mtime newest="" age
+  _valid_generation "$generation" || return 1
+  now=$(date +%s)
+  for heartbeat in "$_GENERATIONS_DIR/$generation"/*.hb; do
+    [[ -f "$heartbeat" ]] || continue
+    mtime=$(_heartbeat_mtime "$heartbeat") || continue
+    [[ -n "$newest" && "$mtime" -le "$newest" ]] || newest="$mtime"
+  done
+  [[ -n "$newest" ]] || return 1
+  age=$((now - newest))
+  ((age >= 0)) || age=0
+  printf '%s' "$age"
+}
+
+_heartbeat_mtime() {
+  local heartbeat="$1" mtime
+  mtime=$(stat -f '%m' "$heartbeat" 2>/dev/null) || true
+  if [[ ! "$mtime" =~ ^[0-9]+$ ]]; then
+    mtime=$(stat -c '%Y' "$heartbeat" 2>/dev/null) || return 1
+  fi
+  [[ "$mtime" =~ ^[0-9]+$ ]] || return 1
+  printf '%s' "$mtime"
 }
 
 generation_agent_container_id() {
@@ -72,26 +102,21 @@ current_agent_container_id() {
   printf '%s' "$container_id"
 }
 
-mark_generation_retired() {
-  local generation="$1" marker tmp
+container_generation() {
+  local container="$1" project prefix generation
+  project=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container" 2>/dev/null) || return 1
+  prefix="${HARNESS_COMPOSE_PROJECT_NAME:-harness-docker}-g"
+  [[ "$project" == "$prefix"* ]] || return 1
+  generation="${project#"$prefix"}"
   _valid_generation "$generation" || return 1
-  mkdir -p "$_RETIRED_GENERATIONS_DIR"
-  marker="$_RETIRED_GENERATIONS_DIR/$generation"
-  tmp=$(mktemp "${marker}.tmp.XXXXXX")
-  if ! printf '%s\n' "$generation" > "$tmp" || ! mv -f "$tmp" "$marker"; then
-    rm -f "$tmp"
-    return 1
-  fi
+  printf '%s' "$generation"
 }
 
 list_generations() {
-  local current marker project prefix
+  local current project prefix
   prefix="${HARNESS_COMPOSE_PROJECT_NAME:-harness-docker}-g"
   {
     current=$(read_current_generation 2>/dev/null) && printf '%s\n' "$current"
-    for marker in "$_RETIRED_GENERATIONS_DIR"/*; do
-      [[ -f "$marker" ]] && basename "$marker"
-    done
     docker ps -a --filter 'label=com.docker.compose.project' \
       --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | while IFS= read -r project; do
         [[ "$project" == "$prefix"* ]] && printf '%s\n' "${project#"$prefix"}"
@@ -99,40 +124,22 @@ list_generations() {
   } | awk 'NF' | sort -u
 }
 
-_generation_session_count() {
-  local generation="$1" container_id count session_pid_dir
-  container_id=$(generation_agent_container_id "$generation") || true
-  if [[ -z "$container_id" ]]; then
-    printf '0'
-    return
-  fi
-  session_pid_dir="${HARNESS_DOCKER_SESSION_PID_DIR:-/tmp}"
-  count=$(docker exec "$container_id" sh -c '
-    session_pid_dir="$1"
-    set -- "$session_pid_dir"/*-session-*.pid
-    [ -e "$1" ] || { echo 0; exit 0; }
-    echo "$#"
-  ' sh "$session_pid_dir" 2>/dev/null) || count=0
-  printf '%s' "$count"
-}
-
 reap_retired_generations() {
-  local current marker generation project session_count rc=0
+  local current generation project session_count rc=0
   current=$(read_current_generation 2>/dev/null) || current=""
-  for marker in "$_RETIRED_GENERATIONS_DIR"/*; do
-    [[ -f "$marker" ]] || continue
-    generation=$(basename "$marker")
-    _valid_generation "$generation" || continue
+  while IFS= read -r generation; do
+    [[ -n "$generation" ]] || continue
     [[ "$generation" == "$current" ]] && continue
-    session_count=$(_generation_session_count "$generation")
+    session_count=$(generation_session_count "$generation")
     [[ "$session_count" =~ ^[0-9]+$ ]] || session_count=0
     ((session_count == 0)) || continue
     project=$(generation_project_name "$generation") || continue
     if docker compose -p "$project" -f "$HARNESS_DOCKER_ROOT/docker-compose.yml" down; then
-      rm -f "$marker"
+      rm -f "$_GENERATIONS_DIR/$generation"/*.hb
+      rmdir "$_GENERATIONS_DIR/$generation" 2>/dev/null || true
     else
       rc=1
     fi
-  done
+  done < <(list_generations)
   return "$rc"
 }

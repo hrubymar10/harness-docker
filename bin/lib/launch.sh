@@ -50,7 +50,7 @@ _die() {
 }
 
 harness_main() {
-  local script_path derived_harness container_id status workdir mounts mounted source_path
+  local script_path derived_harness container_id generation status workdir mounts mounted source_path
   local docker_user session_id exit_code launch_flags_variable launch_flags_was_set
   local launch_flags_host_value relay_port
   local -a docker_flags launch_flags
@@ -121,7 +121,11 @@ harness_main() {
   reap_stale_sessions "$container_id" "$docker_user"
 
   session_id="$$-$RANDOM-$(date +%s)"
-  start_session_watchdog "$container_id" "$session_id" "$$" "$docker_user"
+  generation=$(container_generation "$container_id") || {
+    _die "Harness container is not part of a managed generation."
+    return 1
+  }
+  start_session_watchdog "$container_id" "$session_id" "$$" "$generation" "$docker_user"
 
   docker_flags=(-i)
   launch_flags=(${HARNESS_LAUNCH_FLAGS[@]+"${HARNESS_LAUNCH_FLAGS[@]}"})
@@ -141,6 +145,6 @@ harness_main() {
   exit_code=$?
   set -e
 
-  run_session_cleanup "$container_id" "$session_id" "$docker_user"
+  run_session_cleanup "$container_id" "$session_id" "$generation" "$docker_user"
   return "$exit_code"
 }

@@ -71,7 +71,7 @@ Prefer small, direct shell scripts over heavy abstractions. Keep harness-specifi
 
 - Treat the current-generation pointer as the atomic handoff for new sessions.
 - Resolve a launcher to one immutable container ID; never retarget an active session after a rebuild.
-- Start and health-check a replacement before switching the pointer. Retire old generations only after their session PID directories are empty.
+- Start and health-check a replacement before switching the pointer. Reap non-current generations only after their host-side session heartbeats have expired.
 
 ## Update flow
 
