@@ -341,7 +341,7 @@ prepare_aws_ai_proxy_env() {
   case "$AWS_AI_PROXY_ENABLED" in 1|true|TRUE|yes|YES|on|ON) ;; *) return 0 ;; esac
   command -v curl >/dev/null 2>&1 || { echo 'Warning: curl is unavailable; skipping AWS proxy profile fetch.' >&2; return; }
   local json profiles
-  json=$(curl -fsS --max-time 2 "$AWS_AI_PROXY_URL/profiles" 2>/dev/null) || { echo 'Warning: AWS proxy profiles could not be fetched.' >&2; return; }
+  json=$(curl -fsS --max-time 15 "$AWS_AI_PROXY_URL/profiles" 2>/dev/null) || { echo 'Warning: AWS proxy profiles could not be fetched.' >&2; return; }
   if command -v jq >/dev/null 2>&1; then
     profiles=$(printf '%s' "$json" | jq -r '.[] | "\(.name):\(.region)"' | paste -sd, -) || {
       echo 'Warning: AWS proxy profiles could not be parsed.' >&2; return
