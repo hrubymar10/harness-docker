@@ -10,6 +10,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/tailscale/hujson"
 )
 
 const defaultListen = "127.0.0.1:9976"
@@ -40,7 +42,7 @@ func readConfig(path string) (*config, error) {
 	if err != nil {
 		return nil, err
 	}
-	clean, err := stripJSONComments(raw)
+	clean, err := hujson.Standardize(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parse JSONC: %w", err)
 	}
@@ -67,64 +69,6 @@ func readConfig(path string) (*config, error) {
 		return nil, err
 	}
 	return &cfg, nil
-}
-
-func stripJSONComments(src []byte) ([]byte, error) {
-	out := append([]byte(nil), src...)
-	inString, escaped := false, false
-	for i := 0; i < len(src); i++ {
-		if inString {
-			if escaped {
-				escaped = false
-				continue
-			}
-			switch src[i] {
-			case '\\':
-				escaped = true
-			case '"':
-				inString = false
-			}
-			continue
-		}
-		if src[i] == '"' {
-			inString = true
-			continue
-		}
-		if src[i] != '/' || i+1 >= len(src) {
-			continue
-		}
-		switch src[i+1] {
-		case '/':
-			out[i], out[i+1] = ' ', ' '
-			i += 2
-			for ; i < len(src) && src[i] != '\n' && src[i] != '\r'; i++ {
-				out[i] = ' '
-			}
-			i--
-		case '*':
-			out[i], out[i+1] = ' ', ' '
-			i += 2
-			closed := false
-			for ; i < len(src); i++ {
-				if src[i] == '*' && i+1 < len(src) && src[i+1] == '/' {
-					out[i], out[i+1] = ' ', ' '
-					i++
-					closed = true
-					break
-				}
-				if src[i] != '\n' && src[i] != '\r' {
-					out[i] = ' '
-				}
-			}
-			if !closed {
-				return nil, fmt.Errorf("unterminated block comment")
-			}
-		}
-	}
-	if inString {
-		return nil, fmt.Errorf("unterminated string")
-	}
-	return out, nil
 }
 
 func validateConfig(cfg *config) error {

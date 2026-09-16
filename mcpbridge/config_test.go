@@ -29,7 +29,7 @@ func TestReadConfigJSONCAndDefaults(t *testing.T) {
 
 	path = writeTestConfig(t, `{
   // line comment
-  "servers": [{"name":"xcode", "command":"https://example.invalid/*"}]
+  "servers": [{"name":"xcode", "command":"https://example.invalid/*",}],
 }`)
 	cfg, err := readConfig(path)
 	if err != nil {
@@ -40,6 +40,9 @@ func TestReadConfigJSONCAndDefaults(t *testing.T) {
 	}
 	if got := strings.Join(cfg.AllowList, ","); got != "127.0.0.0/8,::1/128" {
 		t.Fatalf("allow_list = %q", got)
+	}
+	if got := cfg.Servers[0].Command; got != "https://example.invalid/*" {
+		t.Fatalf("command = %q, want URL preserved", got)
 	}
 	if enabledServerCount(cfg) != 1 {
 		t.Fatalf("omitted enabled must default true")
@@ -67,7 +70,6 @@ func TestReadConfigDisabledAndValidation(t *testing.T) {
 		`{"servers":[{"name":"bad.name","command":"x"}]}`,
 		`{"servers":[{"name":"same","command":"x"},{"name":"same","command":"y"}]}`,
 		`{"servers":[{"name":"empty","command":""}]}`,
-		`{"servers":[],}`,
 		`{/* unterminated`,
 	}
 	for _, body := range cases {

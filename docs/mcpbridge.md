@@ -36,9 +36,9 @@ tail -f config/logs/mcpbridge.log
 
 ## Configuration
 
-`config/mcpbridge.jsonc` accepts JSON with line and block comments. Trailing
-commas are not accepted. Unknown fields and invalid server entries stop
-startup rather than silently reducing the published tool set.
+`config/mcpbridge.jsonc` accepts JSON with line and block comments, including
+trailing commas. Unknown fields and invalid server entries stop startup rather
+than silently reducing the published tool set.
 
 - `listen` is an IP-literal host and port. It defaults to
   `127.0.0.1:9976`.

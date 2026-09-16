@@ -2,7 +2,10 @@ module mcpbridge
 
 go 1.23.0
 
-require github.com/modelcontextprotocol/go-sdk v1.3.1
+require (
+	github.com/modelcontextprotocol/go-sdk v1.3.1
+	github.com/tailscale/hujson v0.0.0-20241010212012-29efb4a0184b
+)
 
 require (
 	github.com/google/jsonschema-go v0.4.2 // indirect
