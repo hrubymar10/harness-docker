@@ -95,6 +95,35 @@ RUN mkdir -p "$(dirname ${HOST_HOME})" \
     && echo "${HOST_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 ENV HOST_UID="${HOST_UID}" HOST_USER="${HOST_USER}" HOST_HOME="${HOST_HOME}"
 
+# ── mise (polyglot tool version manager, MIT) ─────────────────────
+# Per-project toolchains via .mise.toml. Shims come before the pinned
+# terraform/terragrunt block on PATH, but mise's default system fallback
+# means a shim only shadows the system binary inside a project that pins it.
+RUN ARCH=$(uname -m) \
+    && case "$ARCH" in x86_64) MISE_ARCH=x64 ;; aarch64) MISE_ARCH=arm64 ;; *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; esac \
+    && MISE_RELEASE=v2026.9.11 \
+    && asset="mise-${MISE_RELEASE}-linux-${MISE_ARCH}-musl" \
+    && curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_RELEASE}/${asset}" -o /tmp/mise-bin \
+    && curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_RELEASE}/SHASUMS256.txt" -o /tmp/mise-SHASUMS256.txt \
+    && expected="$(awk -v a="./${asset}" '$2==a {print $1}' /tmp/mise-SHASUMS256.txt)" \
+    && test -n "$expected" \
+    && echo "${expected}  /tmp/mise-bin" | sha256sum -c - \
+    && chmod +x /tmp/mise-bin \
+    && mv /tmp/mise-bin /usr/local/bin/mise \
+    && rm /tmp/mise-SHASUMS256.txt
+
+ENV MISE_DATA_DIR=/usr/local/share/mise \
+    MISE_CACHE_DIR=/var/cache/mise \
+    MISE_TRUSTED_CONFIG_PATHS="${HOST_HOME}"
+ENV PATH="${MISE_DATA_DIR}/shims:${PATH}"
+
+# Pre-install the toolchain terraform-aws-workloads pins today so first use is
+# offline; the project's .mise.toml selects versions, so no global config here.
+RUN mkdir -p "${MISE_DATA_DIR}" "${MISE_CACHE_DIR}" \
+    && mise install opentofu@1.12.6 terragrunt@1.1.4 tflint@0.62.1 trivy@0.70.0 sops@3.13.1 jq@1.8.1 \
+    && mise reshim \
+    && chown -R "${HOST_UID}" "${MISE_DATA_DIR}" "${MISE_CACHE_DIR}"
+
 # ── Useful language tooling (LSP servers) ──────────────────────────
 RUN npm install -g typescript typescript-language-server pyright
 

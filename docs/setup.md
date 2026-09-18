@@ -55,12 +55,22 @@ container-wide XDG environment; only customized XDG variables are forwarded.
 ## Building the image
 
 The Alpine-based image installs Docker tooling, Git, GitHub and GitLab CLIs,
-AWS CLI, Go, Node.js tooling, Python tooling, debuggers, language servers, and
-the five supported harnesses. Build arguments include `GO_VERSION`,
-`CC_VERSION`, `CODEX_VERSION`, `PI_VERSION`, `VIBE_VERSION`,
-`OPENCODE_VERSION`, and extra Alpine, npm, Go, and Python package lists. Pinning
-a harness version makes builds reproducible; empty harness-version values select
-the upstream current release.
+AWS CLI, Go, Node.js tooling, Python tooling, debuggers, language servers,
+Terraform 1.11.2 with Terragrunt 0.77.10, `mise`, and the five supported
+harnesses. Build arguments include `GO_VERSION`, `CC_VERSION`, `CODEX_VERSION`,
+`PI_VERSION`, `VIBE_VERSION`, `OPENCODE_VERSION`, and extra Alpine, npm, Go, and
+Python package lists. Pinning a harness version makes builds reproducible; empty
+harness-version values select the upstream current release.
+
+`mise` manages per-project toolchains: a project that declares a `.mise.toml`
+gets its pinned versions automatically, and versions the image did not bake
+download on first use. The baked set matches what `terraform-aws-workloads`
+pins today — OpenTofu 1.12.6, Terragrunt 1.1.4, TFLint 0.62.1, Trivy 0.70.0,
+SOPS 3.13.1, and jq 1.8.1 — so first use there is offline. mise shims sit ahead
+of the standalone Terraform and Terragrunt binaries on `PATH` but only shadow
+them inside a project that pins the tool; elsewhere the shims fall back to those
+system versions. Project `.mise.toml` files under the mounted home are trusted
+without prompting.
 
 Extra package lists execute during image build and are trusted inputs. Review
 them as dependency changes before enabling them.
