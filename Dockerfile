@@ -161,6 +161,24 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
 USER root
 ENV DISABLE_AUTOUPDATER=1
 
+RUN set -eu; \
+    mkdir -p /opt/harness-docker; \
+    manifest=/opt/harness-docker/harness-versions; \
+    : > "$manifest"; \
+    capture_version() { \
+      name="$1"; \
+      shift; \
+      output=$("$@" 2>/dev/null || true); \
+      version=$(printf '%s\n' "$output" | sed -nE 's/^[^0-9]*([0-9]+([.][0-9]+)+[^[:space:]]*).*/\1/p' | head -n 1); \
+      [ -n "$version" ] || version=unknown; \
+      printf '%s=%s\n' "$name" "$version" >> "$manifest"; \
+    }; \
+    capture_version claude gosu "${HOST_USER}" env HOME="${HOST_HOME}" "${HOST_HOME}/.local/bin/claude" --version; \
+    capture_version codex codex --version; \
+    capture_version pi pi --version; \
+    capture_version vibe gosu "${HOST_USER}" env HOME="${HOST_HOME}" vibe --version; \
+    capture_version opencode opencode --version
+
 ARG VERSION=""
 LABEL org.opencontainers.image.version="$VERSION"
 

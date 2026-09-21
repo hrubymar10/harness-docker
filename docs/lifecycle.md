@@ -55,7 +55,9 @@ uses the cache, but invalidates the harness-install layers so unpinned CLIs are
 refreshed. Use `--no-cache` with any of those three commands for a full rebuild.
 Every successful image build also updates `harness-docker:latest` for direct
 external `docker run` calls; managed generations remain pinned to versioned
-image tags.
+image tags. When `start` creates a fresh generation, it finishes by listing the
+five harness versions recorded in that image. `rebuild` instead compares them
+with the outgoing image as described in [Generations and rebuilds](generations.md).
 
 See [Generations and rebuilds](generations.md) for the current-pointer, session
 pinning, retirement, and garbage-collection guarantees.

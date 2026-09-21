@@ -11,6 +11,12 @@ the retired generation and new sessions enter the replacement. Rebuilds reuse
 cached base-image layers by default while refreshing all harness CLI installs.
 Pass `--no-cache` to rebuild every image layer from scratch.
 
+After a successful handoff, `rebuild` compares the harness versions baked into
+the outgoing and replacement images. Changed harnesses show the old and new
+versions, unchanged harnesses are marked as already up to date, and a missing
+legacy or pruned image falls back to listing only the replacement versions.
+Version reporting is informational and never blocks a successful handoff.
+
 Each session has a host-side heartbeat under
 `config/.generations/<generation>/<session-id>.hb`. The detached session
 watchdog creates it before launch and refreshes it every 15 seconds while the

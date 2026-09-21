@@ -21,6 +21,8 @@ TEMP_OVERRIDES=()
 source "$SCRIPT_DIR/lib/harness.sh"
 # shellcheck source=bin/lib/generations.sh
 source "$SCRIPT_DIR/lib/generations.sh"
+# shellcheck source=bin/lib/harness-versions.sh
+source "$SCRIPT_DIR/lib/harness-versions.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib/session-cleanup.sh"
 # shellcheck source=bin/lib/ssh-relay.sh
@@ -472,7 +474,7 @@ generation_id() {
 
 generation_image_override() {
   local version="$1" tag file
-  tag=$(printf '%s' "$version" | sed 's/[^A-Za-z0-9_.-]/-/g; s/^[.-]/v&/')
+  tag=$(harness_image_tag "$version")
   file=$(mktemp "${TMPDIR:-/tmp}/harness-docker-image.XXXXXX")
   printf 'services:\n  harness:\n    image: harness-docker:%s\n' "$tag" > "$file"
   TEMP_OVERRIDES+=("$file")
@@ -647,7 +649,7 @@ show_legacy_stack_notice() {
 }
 
 cmd_start() {
-  local no_cache=false current generation container_id relay_port
+  local no_cache=false current generation container_id relay_port new_manifest=""
   (($# <= 1)) || die 'usage: harness-docker-ctrl start [--no-cache]'
   case "${1:-}" in
     '') ;;
@@ -678,10 +680,12 @@ cmd_start() {
   start_ssh_relay
   sync_mcpbridge
   echo "Current generation: $generation"
+  new_manifest=$(read_harness_version_manifest "harness-docker:$IMAGE_TAG" || true)
+  print_harness_version_summary "$new_manifest"
 }
 
 cmd_rebuild() {
-  local skip_mismatch_notice="$1" no_cache=false old="" generation
+  local skip_mismatch_notice="$1" no_cache=false old="" old_image="" old_manifest="" new_manifest="" generation
   shift
   (($# <= 1)) || die 'usage: harness-docker-ctrl rebuild [--no-cache]'
   case "${1:-}" in
@@ -692,6 +696,9 @@ cmd_rebuild() {
   check_docker_api_version; AWS_PROXY_MIGRATION_CHECK=true; setup_env; AWS_PROXY_MIGRATION_CHECK=false
   auto_reap_retired
   old=$(read_current_generation 2>/dev/null || true)
+  if [[ -n "$old" ]] && old_image=$(generation_harness_image "$old"); then
+    old_manifest=$(read_harness_version_manifest "$old_image" || true)
+  fi
   if [[ "$skip_mismatch_notice" != true ]] && running_image_mismatch "$old"; then
     echo "Rebuilding for checkout $CHECKOUT_VERSION (running image: $RUNNING_IMAGE_VERSION)." >&2
   fi
@@ -702,6 +709,8 @@ cmd_rebuild() {
   start_ssh_relay
   sync_mcpbridge
   echo "Current generation: $generation"
+  new_manifest=$(read_harness_version_manifest "harness-docker:$IMAGE_TAG" || true)
+  print_harness_version_summary "$new_manifest" "$old_manifest"
 }
 
 cmd_stop() {
