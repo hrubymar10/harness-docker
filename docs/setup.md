@@ -78,10 +78,15 @@ Copy `config/docker-compose.local.example.yml` to
 only the project roots needed for work. Keep the same absolute paths inside and
 outside the container so editors, Git, Compose, and debuggers agree. Local
 overrides may also add resources or GPU access without changing the shared file.
+The controller exports `HOST_HOME`, `HOST_USER`, and `HOST_TMPDIR` for Compose
+interpolation in that file. On macOS, `HOST_TMPDIR` is the per-user directory
+reported by `getconf DARWIN_USER_TEMP_DIR`; elsewhere it uses the host's
+`TMPDIR` or `/tmp`. Set `HOST_TMPDIR` to an absolute path to override detection.
 
 The local file's `x-excludes` list masks selected files with `/dev/null` and
 directories with empty read-only tmpfs mounts. Use it for secrets nested below a
-mounted project root. It is a visibility guard inside this stack, not a promise
+mounted project root. It expands `HOST_HOME`, `HOST_USER`, and `HOST_TMPDIR`
+there as well. It is a visibility guard inside this stack, not a promise
 that hostile code cannot reach other exposed interfaces.
 
 The Compose stack mounts harness state read-write, `gpg-keys/` and custom tools

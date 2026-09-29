@@ -1,12 +1,14 @@
 # Local volume mounts — copy to docker-compose.local.yml and edit.
 # Add your project directories here. Paths are mirrored (same path inside container).
 # HOST_HOME is auto-detected (e.g. /home/you on Linux, /Users/you on macOS).
+# HOST_TMPDIR is the host's per-user temporary directory.
 # This file is gitignored so your local config stays private.
 services:
   harness:
     volumes:
       - ${HOST_HOME}/projects:${HOST_HOME}/projects
       # - ${HOST_HOME}/work:${HOST_HOME}/work
+      # - ${HOST_TMPDIR}/ActionArtifacts:${HOST_TMPDIR}/ActionArtifacts:ro
 
 # Extra environment variables — passed through from host into the container.
 # Use ${VAR:-} syntax to forward host env vars (empty string if unset).

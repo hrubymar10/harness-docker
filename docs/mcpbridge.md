@@ -68,6 +68,10 @@ For example, Xcode supplies a stdio MCP server through `xcrun`:
 }
 ```
 
+To read artifact paths returned by Xcode tools inside the sandbox, add the
+read-only `ActionArtifacts` mount shown in the local Compose example using
+`HOST_TMPDIR`.
+
 ## Register the gateway
 
 Run the relevant sandbox launcher from the host, or otherwise update the

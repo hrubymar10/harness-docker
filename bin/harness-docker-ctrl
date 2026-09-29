@@ -215,6 +215,13 @@ bootstrap_config_dirs() {
   export HOST_UID="${HOST_UID:-$(id -u)}"
   export HOST_HOME="${HOST_HOME:-$HOME}"
   require_absolute_dir HOST_HOME "$HOST_HOME"
+  if [[ -z "${HOST_TMPDIR:-}" && "$(uname -s)" == Darwin ]]; then
+    HOST_TMPDIR=$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)
+  fi
+  HOST_TMPDIR="${HOST_TMPDIR:-${TMPDIR:-/tmp}}"
+  while [[ "$HOST_TMPDIR" == */ && "$HOST_TMPDIR" != / ]]; do HOST_TMPDIR="${HOST_TMPDIR%/}"; done
+  [[ "$HOST_TMPDIR" == /* ]] || die "HOST_TMPDIR must be an absolute path: $HOST_TMPDIR"
+  export HOST_TMPDIR
 
   if [[ -z "${CLAUDE_CONFIG_DIR:-}" ]]; then
     if [[ -e "$HOME/.claude.json" ]]; then
@@ -406,6 +413,7 @@ apply_excludes() {
     if $in_block && [[ "$line" =~ ^[[:space:]]*-[[:space:]]+(.*) ]]; then
       pat="${BASH_REMATCH[1]}"; pat="${pat//\$\{HOST_USER\}/$HOST_USER}"; pat="${pat//\$HOST_USER/$HOST_USER}"
       pat="${pat//\$\{HOST_HOME\}/$HOST_HOME}"; pat="${pat//\$HOST_HOME/$HOST_HOME}"
+      pat="${pat//\$\{HOST_TMPDIR\}/$HOST_TMPDIR}"; pat="${pat//\$HOST_TMPDIR/$HOST_TMPDIR}"
       patterns+=("$pat")
     elif $in_block; then break; fi
   done < "$local_file"

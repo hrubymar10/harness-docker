@@ -48,6 +48,10 @@ the sandbox. Git/provider credentials passed through environment variables are
 also visible to sandbox processes. Keep local mounts narrow and do not use this
 stack for hostile-code isolation.
 
+If mounting host temporary files with `HOST_TMPDIR`, mount only the needed
+subdirectory read-only. Mounting the entire directory exposes all of the host
+user's temporary files to sandbox processes.
+
 ## Known limitations
 
 - A raw Docker API caller can create a local-driver volume backed by an arbitrary
