@@ -50,9 +50,11 @@ stops a previously running gateway, and `stop` always stops it. Use
 `mcpbridge-start` and `mcpbridge-stop` to apply configuration changes without a
 container rebuild. See [Host MCP gateway](mcpbridge.md).
 
-`start` and `build-image` use the full build cache by default. `rebuild` also
-uses the cache, but invalidates the harness-install layers so unpinned CLIs are
-refreshed. Use `--no-cache` with any of those three commands for a full rebuild.
+`start` and `build-image` reuse the last rebuild's harness layers by default.
+If the saved refresh token is missing or invalid, the next build mints one.
+`rebuild` uses the cache but refreshes harness installs. Use `--no-cache` with
+any of those commands to rebuild every image layer.
+
 Every successful image build also updates `harness-docker:latest` for direct
 external `docker run` calls; managed generations remain pinned to versioned
 image tags. When `start` creates a fresh generation, it finishes by listing the

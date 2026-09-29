@@ -504,21 +504,50 @@ wait_for_generation() {
   return 1
 }
 
+resolve_harness_refresh() {
+  local mint="$1" token
+  if [[ "$mint" == true ]]; then
+    HARNESS_REFRESH_TOKEN=$(date +%s)
+    HARNESS_REFRESH_MINTED=true
+  else
+    token=$(cat "$CONFIG_DIR/.harness-refresh" 2>/dev/null || true)
+    if [[ "$token" =~ ^[0-9]+$ ]]; then
+      HARNESS_REFRESH_TOKEN="$token"
+      HARNESS_REFRESH_MINTED=false
+    else
+      HARNESS_REFRESH_TOKEN=$(date +%s)
+      HARNESS_REFRESH_MINTED=true
+    fi
+  fi
+}
+
+persist_harness_refresh() {
+  if [[ "$HARNESS_REFRESH_MINTED" != true ]]; then return 0; fi
+  local tmp
+  tmp=$(mktemp "$CONFIG_DIR/.harness-refresh.tmp.XXXXXX")
+  printf '%s\n' "$HARNESS_REFRESH_TOKEN" > "$tmp"
+  mv "$tmp" "$CONFIG_DIR/.harness-refresh"
+}
+
 start_generation() {
-  local no_cache="$1" refresh_harnesses="$2" version generation project image_override
+  local no_cache="$1" mint="$2" version generation project image_override
   version=$(harness_version)
   generation=$(generation_id "$version")
   project=$(generation_project_name "$generation")
   generation_image_override "$version"
   image_override="$IMAGE_OVERRIDE"
   echo "Building generation $generation (version $version)..."
+
+  local effective_mint="$mint"
+  [[ "$no_cache" == true ]] && effective_mint=true
+  resolve_harness_refresh "$effective_mint"
+
   local -a build_args=(docker compose -p "$project" "${COMPOSE_FILES[@]}" -f "$image_override" build --build-arg "VERSION=$version")
-  if [[ "$no_cache" == true ]]; then
-    build_args+=(--no-cache)
-  elif [[ "$refresh_harnesses" == true ]]; then
-    build_args+=(--build-arg "HARNESS_REFRESH=$(date +%s)")
-  fi
+  [[ "$no_cache" != true ]] || build_args+=(--no-cache)
+  [[ -z "$HARNESS_REFRESH_TOKEN" ]] || build_args+=(--build-arg "HARNESS_REFRESH=$HARNESS_REFRESH_TOKEN")
+
   "${build_args[@]}"
+  persist_harness_refresh
   tag_latest
   echo "Starting generation $generation..."
   docker compose -p "$project" "${COMPOSE_FILES[@]}" -f "$image_override" up -d
@@ -529,7 +558,6 @@ start_generation() {
   fi
   STARTED_GENERATION="$generation"
 }
-
 
 start_beeper() {
   if [[ -f "$BEEPER_PID_FILE" ]] && kill -0 "$(cat "$BEEPER_PID_FILE")" 2>/dev/null; then echo 'Beeper already running.'; return; fi
@@ -744,9 +772,16 @@ cmd_build_image() {
   local version image_override project
   version=$(harness_version); generation_image_override "$version"; image_override="$IMAGE_OVERRIDE"
   project="${HARNESS_COMPOSE_PROJECT_NAME}-build"
+
+  local mint=false; [[ "$no_cache" == true ]] && mint=true
+  resolve_harness_refresh "$mint"
+
   local -a build_args=(docker compose -p "$project" "${COMPOSE_FILES[@]}" -f "$image_override" build --build-arg "VERSION=$version")
   [[ "$no_cache" != true ]] || build_args+=(--no-cache)
+  [[ -z "$HARNESS_REFRESH_TOKEN" ]] || build_args+=(--build-arg "HARNESS_REFRESH=$HARNESS_REFRESH_TOKEN")
+
   "${build_args[@]}"
+  persist_harness_refresh
   tag_latest
 }
 

@@ -7,9 +7,12 @@ ID for the entire session; a later rebuild never retargets a running harness.
 
 `harness-docker-ctrl rebuild` builds and starts a replacement, waits for its
 health checks, then atomically switches the pointer. Existing sessions remain on
-the retired generation and new sessions enter the replacement. Rebuilds reuse
-cached base-image layers by default while refreshing all harness CLI installs.
-Pass `--no-cache` to rebuild every image layer from scratch.
+the retired generation and new sessions enter the replacement. `start` and
+`build-image` reuse the last rebuild's harness layers by default; only `rebuild`
+or `--no-cache` refresh them. If the saved refresh token is missing or invalid,
+the next build mints one. Rebuilds reuse cached base-image layers by default
+while refreshing all harness CLI installs. Pass `--no-cache` to rebuild every
+image layer from scratch.
 
 After a successful handoff, `rebuild` compares the harness versions baked into
 the outgoing and replacement images. Changed harnesses show the old and new

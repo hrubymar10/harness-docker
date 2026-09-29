@@ -15,6 +15,7 @@ mkdir -p "$TMP/bin" "$TMP/tmp"
 cat > "$TMP/bin/docker" <<'EOF'
 #!/bin/bash
 printf '%q ' "$@" >> "$MOCK_LOG"; printf '\n' >> "$MOCK_LOG"
+if [[ "$1" == compose ]] && [[ "$*" == *' build'* ]] && [[ "$MOCK_BUILD_FAIL" == 1 ]]; then exit 1; fi
 if [[ "$1" == info ]]; then exit 0; fi
 if [[ "$1" == version ]]; then echo "${MOCK_API:-1.44}"; exit 0; fi
 if [[ "$1" == compose ]]; then
@@ -113,30 +114,73 @@ run_build_case rebuild-one rebuild
 grep -Fq -- '--build-arg HARNESS_REFRESH=' "$TMP/rebuild-one.build"
 if grep -Fq -- '--no-cache' "$TMP/rebuild-one.build"; then exit 1; fi
 first_refresh=$(sed -n 's/.*HARNESS_REFRESH=\([0-9][0-9]*\).*/\1/p' "$TMP/rebuild-one.build")
+[[ -n "$first_refresh" && "$(cat "$life_root/config/.harness-refresh")" == "$first_refresh" ]]
 
 run_build_case rebuild-two rebuild
 second_refresh=$(sed -n 's/.*HARNESS_REFRESH=\([0-9][0-9]*\).*/\1/p' "$TMP/rebuild-two.build")
 [[ -n "$first_refresh" && -n "$second_refresh" && "$first_refresh" != "$second_refresh" ]]
+[[ "$(cat "$life_root/config/.harness-refresh")" == "$second_refresh" ]]
 
 run_build_case rebuild-no-cache rebuild --no-cache
 grep -Fq -- '--no-cache' "$TMP/rebuild-no-cache.build"
-if grep -Fq -- 'HARNESS_REFRESH=' "$TMP/rebuild-no-cache.build"; then exit 1; fi
+grep -Fq -- 'HARNESS_REFRESH=' "$TMP/rebuild-no-cache.build"
+[[ "$(cat "$life_root/config/.harness-refresh")" =~ ^[0-9]+$ ]]
 
+rm -f "$life_root/config/.harness-refresh"
 rm -f "$life_root/config/.current-generation"
 run_build_case start-default start
-if grep -Eq -- '--no-cache|HARNESS_REFRESH=' "$TMP/start-default.build"; then exit 1; fi
+start_refresh=$(sed -n 's/.*HARNESS_REFRESH=\([0-9][0-9]*\).*/\1/p' "$TMP/start-default.build")
+[[ -n "$start_refresh" && "$(cat "$life_root/config/.harness-refresh")" == "$start_refresh" ]]
+if grep -Fq -- '--no-cache' "$TMP/start-default.build"; then exit 1; fi
+
+# Now test start reuse
+echo "1700000000" > "$life_root/config/.harness-refresh"
+rm -f "$life_root/config/.current-generation"
+run_build_case start-reuse start
+grep -Fq -- 'HARNESS_REFRESH=1700000000' "$TMP/start-reuse.build"
+[[ "$(cat "$life_root/config/.harness-refresh")" == 1700000000 ]]
+if grep -Fq -- '--no-cache' "$TMP/start-reuse.build"; then echo "FAIL: start-reuse has no-cache"; exit 1; fi
 
 rm -f "$life_root/config/.current-generation"
 run_build_case start-no-cache start --no-cache
 grep -Fq -- '--no-cache' "$TMP/start-no-cache.build"
-if grep -Fq -- 'HARNESS_REFRESH=' "$TMP/start-no-cache.build"; then exit 1; fi
+grep -Fq -- 'HARNESS_REFRESH=' "$TMP/start-no-cache.build"
+[[ "$(cat "$life_root/config/.harness-refresh")" =~ ^[0-9]+$ ]]
 
+rm -f "$life_root/config/.harness-refresh"
+rm -f "$life_root/config/.current-generation"
 run_build_case image-default build-image
-if grep -Eq -- '--no-cache|HARNESS_REFRESH=' "$TMP/image-default.build"; then exit 1; fi
+image_refresh=$(sed -n 's/.*HARNESS_REFRESH=\([0-9][0-9]*\).*/\1/p' "$TMP/image-default.build")
+[[ -n "$image_refresh" && "$(cat "$life_root/config/.harness-refresh")" == "$image_refresh" ]]
+if grep -Fq -- '--no-cache' "$TMP/image-default.build"; then exit 1; fi
 
+echo invalid > "$life_root/config/.harness-refresh"
+run_build_case image-invalid build-image
+invalid_refresh=$(sed -n 's/.*HARNESS_REFRESH=\([0-9][0-9]*\).*/\1/p' "$TMP/image-invalid.build")
+[[ -n "$invalid_refresh" && "$(cat "$life_root/config/.harness-refresh")" == "$invalid_refresh" ]]
+
+# Now test image reuse
+echo "1700000000" > "$life_root/config/.harness-refresh"
+rm -f "$life_root/config/.current-generation"
+run_build_case image-reuse build-image
+grep -Fq -- 'HARNESS_REFRESH=1700000000' "$TMP/image-reuse.build"
+[[ "$(cat "$life_root/config/.harness-refresh")" == 1700000000 ]]
+if grep -Fq -- '--no-cache' "$TMP/image-reuse.build"; then echo "FAIL: image-reuse has no-cache"; exit 1; fi
+
+rm -f "$life_root/config/.current-generation"
 run_build_case image-no-cache build-image --no-cache
 grep -Fq -- '--no-cache' "$TMP/image-no-cache.build"
-if grep -Fq -- 'HARNESS_REFRESH=' "$TMP/image-no-cache.build"; then exit 1; fi
+grep -Fq -- 'HARNESS_REFRESH=' "$TMP/image-no-cache.build"
+[[ "$(cat "$life_root/config/.harness-refresh")" =~ ^[0-9]+$ ]]
+
+# Failed build must not update token
+echo "1700000000" > "$life_root/config/.harness-refresh"
+if env MOCK_BUILD_FAIL=1 "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" rebuild > "$TMP/rebuild-fail.out" 2>&1; then
+  echo "FAIL: rebuild should fail" >&2
+  exit 1
+fi
+[[ "$(cat "$life_root/config/.harness-refresh")" == "1700000000" ]]
+unset MOCK_BUILD_FAIL
 
 if env "${life_common[@]}" "$life_root/bin/harness-docker-ctrl" rebuild --bogus > "$TMP/bogus.out" 2>&1; then exit 1; fi
 grep -Fq 'usage: harness-docker-ctrl rebuild [--no-cache]' "$TMP/bogus.out"

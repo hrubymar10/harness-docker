@@ -3,6 +3,8 @@ mcpbridge/mcpbridge
 
 config/.env
 config/docker-compose.local.yml
+config/.harness-refresh
+config/.harness-refresh.tmp.*
 config/mcpbridge.jsonc
 config/*-notifier
 !config/*.example
