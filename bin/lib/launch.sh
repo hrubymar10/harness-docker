@@ -136,8 +136,16 @@ harness_main() {
     docker_flags+=(-t)
   fi
 
+  # docker exec starts from the container's environment, so the terminal's identity never
+  # arrives on its own and the harness falls back to plain text for links and the clipboard.
+  terminal_env=()
+  for name in TERM_PROGRAM TERM_PROGRAM_VERSION LC_TERMINAL LC_TERMINAL_VERSION; do
+    if [[ -n "${!name:-}" ]]; then terminal_env+=(-e "$name=${!name}"); fi
+  done
+
   set +e
   docker exec "${docker_flags[@]}" \
+    ${terminal_env[@]+"${terminal_env[@]}"} \
     -e "$HARNESS_SESSION_ENV=$session_id" \
     -e "HARNESS_DOCKER_SESSION_PID_DIR=${HARNESS_DOCKER_SESSION_PID_DIR:-/tmp}" \
     -u "$docker_user" -w "$workdir" "$container_id" \
