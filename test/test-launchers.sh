@@ -69,6 +69,14 @@ done
 (cd "$TMP/work/project"; CLAUDE_LAUNCH_FLAGS='--permission-mode auto --settings /etc/claude/hooks.json' "$ROOT/bin/claude-docker" --version >/dev/null)
 grep -q 'cid-pinned claude-session --permission-mode auto --settings /etc/claude/hooks.json --version' "$LOG"
 if grep -q -- '--dangerously-skip-permissions' "$LOG"; then exit 1; fi
+
+# The terminal's identity crosses into the container only when the host has one.
+: > "$LOG"
+(cd "$TMP/work/project"; TERM_PROGRAM=iTerm.app TERM_PROGRAM_VERSION=3.7.3 LC_TERMINAL=iTerm2 LC_TERMINAL_VERSION=3.7.3 "$ROOT/bin/claude-docker" --version >/dev/null)
+grep -q -- '-e TERM_PROGRAM=iTerm.app -e TERM_PROGRAM_VERSION=3.7.3 -e LC_TERMINAL=iTerm2 -e LC_TERMINAL_VERSION=3.7.3 -e ' "$LOG"
+: > "$LOG"
+(cd "$TMP/work/project"; env -u TERM_PROGRAM -u TERM_PROGRAM_VERSION -u LC_TERMINAL -u LC_TERMINAL_VERSION "$ROOT/bin/claude-docker" --version >/dev/null)
+if grep -q -- 'TERM_PROGRAM\|LC_TERMINAL' "$LOG"; then exit 1; fi
 : > "$LOG"
 (cd "$TMP/work/project"; VIBE_LAUNCH_FLAGS='' "$ROOT/bin/vibe-docker" --version >/dev/null)
 grep -q 'cid-pinned vibe-session --version' "$LOG"

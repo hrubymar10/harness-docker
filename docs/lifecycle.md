@@ -20,6 +20,11 @@ When `SSH_AUTH_SOCK` names a live agent socket, every launch also restores the
 host-side relay that forwards it into the sandbox (see [Setup](setup.md)), so a
 relay that died or lost its agent socket returns without a restart of the stack.
 
+The launch also forwards the host terminal's identity when it is set:
+`TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `LC_TERMINAL`, and `LC_TERMINAL_VERSION`.
+`docker exec` would otherwise start from the container's environment, and the
+harness would fall back to plain text for links and the clipboard.
+
 The launchers are `claude-docker`, `codex-docker`, `pi-docker`, and
 `vibe-docker`, and `opencode-docker`. Matching `*-docker-vscode-wrapper` commands provide an executable
 path for editor integrations.
