@@ -32,20 +32,25 @@ read_harness_version_manifest() {
   printf '%s\n' "$manifest"
 }
 
+# A "<name>.latest" manifest entry records a newer upstream release that the
+# image could not install, such as one without a wheel for its platform.
 print_harness_version_summary() {
-  local new_manifest="$1" old_manifest="${2:-}" name new_version old_version
+  local new_manifest="$1" old_manifest="${2:-}" name new_version old_version latest note
   for name in "${_HARNESS_VERSION_NAMES[@]}"; do
     new_version=$(_manifest_version "$new_manifest" "$name")
     old_version=$(_manifest_version "$old_manifest" "$name")
+    latest=$(_manifest_version "$new_manifest" "$name.latest")
+    note=""
+    [[ -z "$latest" ]] || note=" (latest v$latest is not compatible)"
     if [[ -z "$new_version" || "$new_version" == unknown ]] \
       || [[ -n "$old_manifest" && "$old_version" == unknown ]]; then
-      printf '* %s (version unavailable)\n' "$name"
+      printf '* %s (version unavailable)%s\n' "$name" "$note"
     elif [[ -z "$old_manifest" ]]; then
-      printf '* %s v%s\n' "$name" "$new_version"
+      printf '* %s v%s%s\n' "$name" "$new_version" "$note"
     elif [[ "$old_version" == "$new_version" ]]; then
-      printf '* %s v%s (Already up-to-date)\n' "$name" "$new_version"
+      printf '* %s v%s%s\n' "$name" "$new_version" "${note:- (Already up-to-date)}"
     else
-      printf '* %s v%s -> v%s\n' "$name" "$old_version" "$new_version"
+      printf '* %s v%s -> v%s%s\n' "$name" "$old_version" "$new_version" "$note"
     fi
   done
 }

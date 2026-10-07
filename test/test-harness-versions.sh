@@ -52,6 +52,13 @@ assert_eq "$(print_harness_version_summary "$new_manifest")" "$expected_plain"
 expected_diff=$'* claude v2.1.0 (Already up-to-date)\n* codex v1.2.3 -> v2.3.4\n* pi v0.8.0 -> v0.9.0\n* vibe (version unavailable)\n* opencode v1.0.0 (Already up-to-date)'
 assert_eq "$(print_harness_version_summary "$new_manifest" "$old_manifest")" "$expected_diff"
 
+incompatible_new=$'claude=2.1.0\ncodex=2.3.4\npi=0.9.0\nvibe=1.2.0\nvibe.latest=1.3.0\nopencode=1.0.0'
+assert_eq "$(print_harness_version_summary "$incompatible_new" | grep vibe)" '* vibe v1.2.0 (latest v1.3.0 is not compatible)'
+same_old=$'claude=2.1.0\ncodex=2.3.4\npi=0.9.0\nvibe=1.2.0\nopencode=1.0.0'
+assert_eq "$(print_harness_version_summary "$incompatible_new" "$same_old" | grep vibe)" '* vibe v1.2.0 (latest v1.3.0 is not compatible)'
+older_old=$'claude=2.1.0\ncodex=2.3.4\npi=0.9.0\nvibe=1.1.0\nopencode=1.0.0'
+assert_eq "$(print_harness_version_summary "$incompatible_new" "$older_old" | grep vibe)" '* vibe v1.1.0 -> v1.2.0 (latest v1.3.0 is not compatible)'
+
 empty_new=''
 expected_unavailable=$'* claude (version unavailable)\n* codex (version unavailable)\n* pi (version unavailable)\n* vibe (version unavailable)\n* opencode (version unavailable)'
 assert_eq "$(print_harness_version_summary "$empty_new")" "$expected_unavailable"

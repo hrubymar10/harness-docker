@@ -18,6 +18,9 @@ After a successful handoff, `rebuild` compares the harness versions baked into
 the outgoing and replacement images. Changed harnesses show the old and new
 versions, unchanged harnesses are marked as already up to date, and a missing
 legacy or pruned image falls back to listing only the replacement versions.
+When the build could not install a harness's newest upstream release, for
+example because no wheel exists for the image's platform, that line also names
+the incompatible latest version.
 Version reporting is informational and never blocks a successful handoff.
 
 Each session has a host-side heartbeat under

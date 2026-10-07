@@ -164,6 +164,8 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
 USER root
 ENV DISABLE_AUTOUPDATER=1
 
+# vibe.latest is recorded only for unpinned builds: there, resolving an older
+# release shows the newer one is not installable on this image.
 RUN set -eu; \
     mkdir -p /opt/harness-docker; \
     manifest=/opt/harness-docker/harness-versions; \
@@ -180,7 +182,14 @@ RUN set -eu; \
     capture_version codex codex --version; \
     capture_version pi pi --version; \
     capture_version vibe gosu "${HOST_USER}" env HOME="${HOST_HOME}" vibe --version; \
-    capture_version opencode opencode --version
+    capture_version opencode opencode --version; \
+    vibe_installed=$(uv tool list 2>/dev/null | sed -n 's/^mistral-vibe v//p' | head -n 1); \
+    vibe_latest=$(curl -fsS --max-time 10 https://pypi.org/pypi/mistral-vibe/json 2>/dev/null \
+      | python3 -c 'import json, sys; print(json.load(sys.stdin)["info"]["version"])' 2>/dev/null || true); \
+    if [ -z "$VIBE_VERSION" ] && [ -n "$vibe_installed" ] && [ -n "$vibe_latest" ] \
+      && [ "$vibe_installed" != "$vibe_latest" ]; then \
+      printf 'vibe.latest=%s\n' "$vibe_latest" >> "$manifest"; \
+    fi
 
 ARG VERSION=""
 LABEL org.opencontainers.image.version="$VERSION"
