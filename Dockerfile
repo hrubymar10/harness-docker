@@ -123,10 +123,13 @@ ENV OPENCODE_DISABLE_AUTOUPDATE=1
 ARG VIBE_VERSION=""
 ENV UV_TOOL_DIR=/opt/uv-tools
 ENV UV_TOOL_BIN_DIR=/usr/local/bin
+# Some releases publish only glibc wheels. Refusing to build mistral-vibe from
+# source makes uv pick the newest release that installs on musl, instead of
+# failing on a missing Rust toolchain.
 RUN if [ -n "$VIBE_VERSION" ]; then \
-      uv tool install "mistral-vibe==${VIBE_VERSION}"; \
+      uv tool install --no-build-package mistral-vibe "mistral-vibe==${VIBE_VERSION}"; \
     else \
-      uv tool install mistral-vibe; \
+      uv tool install --no-build-package mistral-vibe mistral-vibe; \
     fi \
     && chmod -R a+rX /opt/uv-tools \
     && gosu "${HOST_USER}" vibe --version

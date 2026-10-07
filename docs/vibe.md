@@ -1,9 +1,12 @@
 # Mistral Vibe
 
 Mistral Vibe is installed as the `mistral-vibe` Python tool. Set the
-`VIBE_VERSION` image build argument to pin a release; an empty value installs the
-package's current release. The image supplies `vibe-session` and
-`vibe-notifier` integration commands.
+`VIBE_VERSION` image build argument to pin a release; an empty value installs
+the newest release that ships a wheel installable on the image's musl-based
+Alpine base. Releases published only as glibc wheels or source are skipped,
+because building Vibe from source needs a Rust toolchain the image does not
+include; a pinned version must therefore have a compatible wheel. The image
+supplies `vibe-session` and `vibe-notifier` integration commands.
 
 Vibe state defaults to `~/.vibe`. Authenticate with Vibe's `/login` flow or
 provide `MISTRAL_API_KEY`. Treat the mounted state and provider key as readable

@@ -60,7 +60,8 @@ the five supported harnesses. Build arguments include `GO_VERSION`,
 `CC_VERSION`, `CODEX_VERSION`, `PI_VERSION`, `VIBE_VERSION`,
 `OPENCODE_VERSION`, and extra Alpine, npm, Go, and Python package lists. Pinning
 a harness version makes builds reproducible; empty harness-version values select
-the upstream current release.
+the upstream current release, except that Vibe selects the newest release
+installable on the image (see [Mistral Vibe](vibe.md)).
 
 Extra package lists execute during image build and are trusted inputs. Review
 them as dependency changes before enabling them.
