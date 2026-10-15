@@ -15,7 +15,13 @@ import (
 )
 
 func TestMCPBridgeHelperProcess(t *testing.T) {
-	if os.Getenv("MCPBRIDGE_HELPER") != "1" {
+	switch os.Getenv("MCPBRIDGE_HELPER") {
+	case "1":
+	case "hang":
+		// Start but never answer the MCP handshake.
+		time.Sleep(time.Minute)
+		os.Exit(0)
+	default:
 		return
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "fake", Version: "1"}, nil)
@@ -36,6 +42,10 @@ func TestMCPBridgeHelperProcess(t *testing.T) {
 			return &mcp.GetPromptResult{Messages: []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: "later"}}}}, nil
 		})
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "triggered"}}}, nil
+	})
+	server.AddTool(&mcp.Tool{Name: "exit", InputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		time.AfterFunc(50*time.Millisecond, func() { os.Exit(0) })
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "exiting"}}}, nil
 	})
 	server.AddPrompt(&mcp.Prompt{Name: "hello"}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		return &mcp.GetPromptResult{Messages: []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: "hello " + req.Params.Arguments["name"]}}}}, nil
@@ -86,7 +96,7 @@ func TestGatewayNamespacesAndRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 2 || tools.Tools[0].Name != "fake.echo" || tools.Tools[1].Name != "fake.trigger" {
+	if len(tools.Tools) != 3 || tools.Tools[0].Name != "fake.echo" || tools.Tools[1].Name != "fake.exit" || tools.Tools[2].Name != "fake.trigger" {
 		t.Fatalf("unexpected tools: %#v", tools.Tools)
 	}
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "fake.echo", Arguments: map[string]any{"text": "round trip"}})
@@ -179,7 +189,103 @@ func TestGatewayServesStreamableHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Tools) != 2 || result.Tools[0].Name != "fake.echo" {
+	if len(result.Tools) != 3 || result.Tools[0].Name != "fake.echo" {
 		t.Fatalf("unexpected HTTP tool list: %#v", result.Tools)
+	}
+}
+
+func TestGatewayRestartsExitedUpstream(t *testing.T) {
+	gateway, err := newGateway(context.Background(), helperConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(gateway.Close)
+	session := connectGatewayClient(t, gateway.server)
+
+	if _, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "fake.exit"}); err != nil {
+		t.Fatal(err)
+	}
+	u := gateway.upstreams[0]
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		u.sessionM.Lock()
+		exited := u.exited
+		u.sessionM.Unlock()
+		if exited {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("gateway did not notice the upstream exit")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "fake.echo", Arguments: map[string]any{"text": "after restart"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Content[0].(*mcp.TextContent).Text; got != "after restart" {
+		t.Fatalf("echo result = %q", got)
+	}
+	prompt, err := session.GetPrompt(context.Background(), &mcp.GetPromptParams{Name: "fake.hello", Arguments: map[string]string{"name": "again"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := prompt.Messages[0].Content.(*mcp.TextContent).Text; got != "hello again" {
+		t.Fatalf("prompt result = %q", got)
+	}
+}
+
+func TestGatewayBoundsHungUpstreamRestart(t *testing.T) {
+	gateway, err := newGateway(context.Background(), helperConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(gateway.Close)
+	session := connectGatewayClient(t, gateway.server)
+
+	previous := upstreamRestartTimeout
+	upstreamRestartTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { upstreamRestartTimeout = previous })
+
+	if _, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "fake.exit"}); err != nil {
+		t.Fatal(err)
+	}
+	u := gateway.upstreams[0]
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		u.sessionM.Lock()
+		exited := u.exited
+		if exited {
+			u.cfg.Env = map[string]string{"MCPBRIDGE_HELPER": "hang"}
+		}
+		u.sessionM.Unlock()
+		if exited {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("gateway did not notice the upstream exit")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	start := time.Now()
+	if _, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "fake.echo", Arguments: map[string]any{"text": "x"}}); err == nil {
+		t.Fatal("call to a hung upstream unexpectedly succeeded")
+	}
+	// The SDK gives a stuck process five seconds to exit before signalling
+	// it, so the bound is the restart timeout plus that grace period.
+	if elapsed := time.Since(start); elapsed > 15*time.Second {
+		t.Fatalf("hung restart took %v", elapsed)
+	}
+	closed := make(chan struct{})
+	go func() {
+		gateway.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("gateway.Close blocked after a hung restart")
 	}
 }

@@ -26,6 +26,12 @@ Configuration is read only at process startup. A running gateway is not
 restarted by a later `start`, so use the explicit stop/start pair to apply
 changes. The PID is stored in `~/.harness-docker-mcpbridge.pid`.
 
+If a configured server's process exits, for example because Safari or Xcode
+quit, the gateway logs it and starts the command again on the next tool or
+prompt request for that server, then refreshes its tool and prompt lists. A
+request that is in flight when the process exits fails and is not retried,
+because the server may already have acted on it.
+
 Runtime output is appended to `config/logs/mcpbridge.log` instead of the
 controller's terminal. If the allowlist blocks a request, inspect its direct
 peer address there:

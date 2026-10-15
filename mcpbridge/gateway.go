@@ -15,9 +15,18 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// upstreamRestartTimeout bounds restarting an exited upstream, so a command
+// that starts but never completes the MCP handshake cannot hold the upstream
+// lock, and with it later requests and shutdown, indefinitely.
+var upstreamRestartTimeout = 30 * time.Second
+
 type upstream struct {
 	name     string
+	cfg      serverConfig
+	client   *mcp.Client
+	sessionM sync.Mutex
 	session  *mcp.ClientSession
+	exited   bool
 	tools    map[string]string
 	prompts  map[string]string
 	refreshM sync.Mutex
@@ -41,8 +50,8 @@ func newGateway(ctx context.Context, cfg *config) (*gateway, error) {
 		if !serverCfg.isEnabled() {
 			continue
 		}
-		u := &upstream{name: serverCfg.Name, tools: make(map[string]string), prompts: make(map[string]string)}
-		client := mcp.NewClient(&mcp.Implementation{Name: "mcpbridge-" + serverCfg.Name, Version: "1"}, &mcp.ClientOptions{
+		u := &upstream{name: serverCfg.Name, cfg: serverCfg, tools: make(map[string]string), prompts: make(map[string]string)}
+		u.client = mcp.NewClient(&mcp.Implementation{Name: "mcpbridge-" + serverCfg.Name, Version: "1"}, &mcp.ClientOptions{
 			ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
 				go g.refreshUpstream(u)
 			},
@@ -50,18 +59,16 @@ func newGateway(ctx context.Context, cfg *config) (*gateway, error) {
 				go g.refreshUpstream(u)
 			},
 		})
-		cmd := exec.Command(serverCfg.Command, serverCfg.Args...)
-		cmd.Dir = serverCfg.CWD
-		cmd.Env = mergedEnv(serverCfg.Env)
-		cmd.Stderr = os.Stderr
-		session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+		u.sessionM.Lock()
+		err := g.connect(ctx, u)
+		session := u.session
+		u.sessionM.Unlock()
 		if err != nil {
 			g.Close()
 			return nil, fmt.Errorf("start upstream %q: %w", serverCfg.Name, err)
 		}
-		u.session = session
 		g.upstreams = append(g.upstreams, u)
-		if err := g.refresh(ctx, u); err != nil {
+		if err := g.refresh(ctx, u, session); err != nil {
 			g.Close()
 			return nil, fmt.Errorf("load upstream %q: %w", serverCfg.Name, err)
 		}
@@ -70,6 +77,76 @@ func newGateway(ctx context.Context, cfg *config) (*gateway, error) {
 		return nil, fmt.Errorf("no enabled servers")
 	}
 	return g, nil
+}
+
+// connect starts the upstream command and records the new session. The caller
+// must hold u.sessionM.
+func (g *gateway) connect(ctx context.Context, u *upstream) error {
+	cmd := exec.Command(u.cfg.Command, u.cfg.Args...)
+	cmd.Dir = u.cfg.CWD
+	cmd.Env = mergedEnv(u.cfg.Env)
+	cmd.Stderr = os.Stderr
+	session, err := u.client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+	if err != nil {
+		return err
+	}
+	u.session = session
+	u.exited = false
+	go g.watch(u, session)
+	return nil
+}
+
+// watch marks the upstream as exited when its process closes the connection,
+// for example when the host application behind it quits. The next request
+// restarts it instead of writing to the closed pipe.
+func (g *gateway) watch(u *upstream, session *mcp.ClientSession) {
+	err := session.Wait()
+	u.sessionM.Lock()
+	current := u.session == session
+	if current {
+		u.exited = true
+	}
+	u.sessionM.Unlock()
+	g.mu.Lock()
+	closed := g.closed
+	g.mu.Unlock()
+	if current && !closed {
+		log.Printf("WARN: upstream %q exited (%v); restarting it on the next request", u.name, err)
+	}
+}
+
+// liveSession returns the upstream session, restarting the upstream first if
+// its process has exited. A call that fails because the upstream dies while
+// it is in flight is not retried, because the upstream may already have acted
+// on it.
+func (g *gateway) liveSession(ctx context.Context, u *upstream) (*mcp.ClientSession, error) {
+	u.sessionM.Lock()
+	if !u.exited {
+		session := u.session
+		u.sessionM.Unlock()
+		return session, nil
+	}
+	g.mu.Lock()
+	closed := g.closed
+	g.mu.Unlock()
+	if closed {
+		u.sessionM.Unlock()
+		return nil, fmt.Errorf("gateway is closed")
+	}
+	_ = u.session.Close()
+	restartCtx, cancel := context.WithTimeout(ctx, upstreamRestartTimeout)
+	defer cancel()
+	if err := g.connect(restartCtx, u); err != nil {
+		u.sessionM.Unlock()
+		return nil, fmt.Errorf("restart upstream %q: %w", u.name, err)
+	}
+	session := u.session
+	u.sessionM.Unlock()
+	log.Printf("upstream %q restarted", u.name)
+	if err := g.refresh(ctx, u, session); err != nil {
+		log.Printf("WARN: refresh restarted upstream %q: %v", u.name, err)
+	}
+	return session, nil
 }
 
 func mergedEnv(overrides map[string]string) []string {
@@ -94,19 +171,22 @@ func mergedEnv(overrides map[string]string) []string {
 func (g *gateway) refreshUpstream(u *upstream) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := g.refresh(ctx, u); err != nil {
+	u.sessionM.Lock()
+	session := u.session
+	u.sessionM.Unlock()
+	if err := g.refresh(ctx, u, session); err != nil {
 		log.Printf("WARN: refresh upstream %q: %v", u.name, err)
 	}
 }
 
-func (g *gateway) refresh(ctx context.Context, u *upstream) error {
+func (g *gateway) refresh(ctx context.Context, u *upstream, session *mcp.ClientSession) error {
 	u.refreshM.Lock()
 	defer u.refreshM.Unlock()
-	tools, err := listAllTools(ctx, u.session)
+	tools, err := listAllTools(ctx, session)
 	if err != nil {
 		return fmt.Errorf("list tools: %w", err)
 	}
-	prompts, err := listAllPrompts(ctx, u.session)
+	prompts, err := listAllPrompts(ctx, session)
 	if err != nil {
 		return fmt.Errorf("list prompts: %w", err)
 	}
@@ -162,7 +242,11 @@ func (g *gateway) refresh(ctx context.Context, u *upstream) error {
 			if !ok {
 				return nil, fmt.Errorf("tool %q is no longer available", publicName)
 			}
-			return u.session.CallTool(ctx, &mcp.CallToolParams{
+			session, err := g.liveSession(ctx, u)
+			if err != nil {
+				return nil, err
+			}
+			return session.CallTool(ctx, &mcp.CallToolParams{
 				Meta:      req.Params.Meta,
 				Name:      originalName,
 				Arguments: req.Params.Arguments,
@@ -187,7 +271,11 @@ func (g *gateway) refresh(ctx context.Context, u *upstream) error {
 			if !ok {
 				return nil, fmt.Errorf("prompt %q is no longer available", publicName)
 			}
-			return u.session.GetPrompt(ctx, &mcp.GetPromptParams{
+			session, err := g.liveSession(ctx, u)
+			if err != nil {
+				return nil, err
+			}
+			return session.GetPrompt(ctx, &mcp.GetPromptParams{
 				Meta:      req.Params.Meta,
 				Name:      originalName,
 				Arguments: req.Params.Arguments,
@@ -284,8 +372,11 @@ func (g *gateway) Close() {
 	upstreams := append([]*upstream(nil), g.upstreams...)
 	g.mu.Unlock()
 	for _, u := range upstreams {
-		if u.session != nil {
-			_ = u.session.Close()
+		u.sessionM.Lock()
+		session := u.session
+		u.sessionM.Unlock()
+		if session != nil {
+			_ = session.Close()
 		}
 	}
 }
