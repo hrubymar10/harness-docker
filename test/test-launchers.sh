@@ -44,7 +44,7 @@ source "$ROOT/bin/lib/harness.sh"
 for harness in claude codex pi vibe opencode; do
   case "$harness" in
     claude) expected_env=CLAUDE_SESSION_ID; expected_wrapper=claude-session; expected_flags='--dangerously-skip-permissions' ;;
-    codex) expected_env=CODEX_SESSION_ID; expected_wrapper=codex-session; expected_flags='--dangerously-bypass-approvals-and-sandbox' ;;
+    codex) expected_env=CODEX_SESSION_ID; expected_wrapper=codex-session; expected_flags='--dangerously-bypass-approvals-and-sandbox --no-daemon' ;;
     pi) expected_env=PI_SESSION_ID; expected_wrapper=pi-session; expected_flags='' ;;
     vibe) expected_env=VIBE_SESSION_ID; expected_wrapper=vibe-session; expected_flags='--yolo' ;;
     opencode) expected_env=OPENCODE_SESSION_ID; expected_wrapper=opencode-session; expected_flags='--auto' ;;

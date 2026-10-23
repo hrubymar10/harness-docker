@@ -9,11 +9,18 @@ with `codex login` or provide `OPENAI_API_KEY`, then mount only the state and
 projects the sandbox may access.
 
 Run `codex-docker`; arguments are forwarded after
-`--dangerously-bypass-approvals-and-sandbox`, or after `CODEX_LAUNCH_FLAGS` when
-that override is set. For VS Code, set
+`--dangerously-bypass-approvals-and-sandbox --no-daemon`, or after
+`CODEX_LAUNCH_FLAGS` when that override is set. For VS Code, set
 `chatgpt.cliExecutable` to the absolute path of
 `codex-docker-vscode-wrapper`. The launcher exports `CODEX_SESSION_ID` and uses
 the mounted `CODEX_HOME`.
+
+`--no-daemon` keeps the container's Codex off the shared background app-server.
+The host's Codex installs that daemon into `CODEX_HOME/packages` as a host
+binary and talks to it over a socket in `CODEX_HOME`, so a container session that
+tries to use it fails with `app server did not become ready`. Keep the flag in any
+`CODEX_LAUNCH_FLAGS` override. Without the daemon, `codex agents` cannot browse
+sessions that the host's daemon holds.
 
 The package's expected `codex-path/rg` helper is intentionally a symlink to the
 image's Alpine `/usr/bin/rg` (ripgrep 15.1.0 in the current base repositories).
