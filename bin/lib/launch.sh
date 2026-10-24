@@ -49,11 +49,54 @@ _die() {
   return 1
 }
 
+# The features of this launcher a supervising program can rely on. With
+# HARNESS_DOCKER_PRINT_FEATURES=1 the launcher prints them, one per line, and
+# exits before it touches Docker: a launcher without this probe would run the
+# harness instead, and prints no feature.
+HARNESS_DOCKER_FEATURES=(forward_env)
+
+# HARNESS_DOCKER_FORWARD_ENV lists host variables, separated by whitespace or
+# commas, to hand to the harness for this one session. Only the names reach
+# `docker exec`: `-e NAME` takes the value from this process's environment, so a
+# value never appears in an argument list (ps shows it to every local user).
+# A listed variable that is unset is skipped, and so is an empty entry. The launcher's own variables,
+# the session variable, and the ones that would change how the container starts
+# or finds programs cannot be forwarded.
+_forwarded_env_flags() {
+  local raw name count=0
+  local -a names
+  forward_env_flags=()
+  raw="${HARNESS_DOCKER_FORWARD_ENV:-}"
+  # read -a splits without pathname expansion, so a `*` in the list reaches the
+  # name check below as a `*` instead of turning into file names.
+  IFS=$' ,\t' read -r -a names <<< "${raw//$'\n'/ }" || true
+  for name in ${names[@]+"${names[@]}"}; do
+    [[ -n "$name" ]] || continue
+    [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
+      _die "HARNESS_DOCKER_FORWARD_ENV: '$name' is not a variable name."
+      return 1
+    }
+    case "$name" in
+      "$HARNESS_SESSION_ENV"|HARNESS_DOCKER_*|DOCKER_*|SSH_*|LD_*|DYLD_*|PATH|HOME|USER|LOGNAME|SHELL|IFS|ENV|BASH_ENV|TERM|TERM_PROGRAM|TERM_PROGRAM_VERSION|LC_TERMINAL|LC_TERMINAL_VERSION)
+        _die "HARNESS_DOCKER_FORWARD_ENV: '$name' cannot be forwarded."
+        return 1
+        ;;
+    esac
+    count=$((count + 1))
+    if ((count > 64)); then
+      _die "HARNESS_DOCKER_FORWARD_ENV: at most 64 variables can be forwarded."
+      return 1
+    fi
+    [[ -n "${!name+x}" ]] || continue
+    forward_env_flags+=(-e "$name")
+  done
+}
+
 harness_main() {
   local script_path derived_harness container_id generation status workdir mounts mounted source_path
   local docker_user session_id exit_code launch_flags_variable launch_flags_was_set
   local launch_flags_host_value relay_port
-  local -a docker_flags launch_flags
+  local -a docker_flags launch_flags forward_env_flags
 
   script_path=$(_launcher_script_path "$0")
   derived_harness=$(harness_from_launcher "$script_path") || {
@@ -66,6 +109,10 @@ harness_main() {
     return 1
   fi
   load_harness_spec "$HARNESS"
+  if [[ "${HARNESS_DOCKER_PRINT_FEATURES:-}" == 1 ]]; then
+    printf '%s\n' "${HARNESS_DOCKER_FEATURES[@]}"
+    return 0
+  fi
   launch_flags_variable="$(printf '%s' "$HARNESS" | tr '[:lower:]' '[:upper:]')_LAUNCH_FLAGS"
   launch_flags_was_set="${!launch_flags_variable+x}"
   launch_flags_host_value="${!launch_flags_variable-}"
@@ -74,6 +121,7 @@ harness_main() {
     export "$launch_flags_variable=$launch_flags_host_value"
   fi
   _apply_launch_flags_override
+  _forwarded_env_flags || return 1
 
   docker info >/dev/null 2>&1 || {
     _die "Docker is not running."
@@ -146,6 +194,7 @@ harness_main() {
   set +e
   docker exec "${docker_flags[@]}" \
     ${terminal_env[@]+"${terminal_env[@]}"} \
+    ${forward_env_flags[@]+"${forward_env_flags[@]}"} \
     -e "$HARNESS_SESSION_ENV=$session_id" \
     -e "HARNESS_DOCKER_SESSION_PID_DIR=${HARNESS_DOCKER_SESSION_PID_DIR:-/tmp}" \
     -u "$docker_user" -w "$workdir" "$container_id" \

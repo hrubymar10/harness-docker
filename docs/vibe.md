@@ -12,6 +12,13 @@ Vibe state defaults to `~/.vibe`. Authenticate with Vibe's `/login` flow or
 provide `MISTRAL_API_KEY`. Treat the mounted state and provider key as readable
 by all processes in the sandbox.
 
+A program that runs Vibe once per turn can configure it for that session through
+the environment (`VIBE_HOME`, `VIBE_ACTIVE_MODEL`, `VIBE_MCP_SERVERS`,
+`VIBE_SESSION_LOGGING__SAVE_DIR`, and the variable a bearer key is read from) by
+listing the names in `HARNESS_DOCKER_FORWARD_ENV`; see
+[Session lifecycle](lifecycle.md). It should also set `VIBE_LAUNCH_FLAGS=`
+(empty) when it passes its own flags, which replaces the built-in `--yolo`.
+
 Run `vibe-docker`; arguments are forwarded after `--yolo`, or after
 `VIBE_LAUNCH_FLAGS` when that override is set. Integrations that accept a CLI
 executable can use the absolute path to

@@ -91,6 +91,57 @@ grep -q 'cid-pinned vibe-session --version' "$LOG"
 if grep -q -- '--yolo' "$LOG"; then exit 1; fi
 rm -f "$ENV_FILE"
 
+# The feature probe answers before Docker is touched; a launcher without it would run the harness.
+: > "$LOG"
+(cd "$TMP/work/project"; HARNESS_DOCKER_PRINT_FEATURES=1 "$ROOT/bin/opencode-docker" --version > "$TMP/out")
+[[ "$(cat "$TMP/out")" == forward_env ]]
+[[ ! -s "$LOG" ]]
+: > "$LOG"
+(cd "$TMP/work/project"; HARNESS_DOCKER_PRINT_FEATURES=0 "$ROOT/bin/opencode-docker" --version >/dev/null)
+grep -q 'exec ' "$LOG"
+
+# Listed host variables reach the harness by name only, and the launcher's flags can be cleared at the same time.
+secret='Bearer aak_secret_value_never_in_argv'
+: > "$LOG"
+(cd "$TMP/work/project"; OPENCODE_DB=/mirrored/state/opencode.db OPENCODE_CONFIG_CONTENT="$secret" OPENCODE_LAUNCH_FLAGS='' \
+  HARNESS_DOCKER_FORWARD_ENV='OPENCODE_DB, OPENCODE_CONFIG_CONTENT,NOT_SET_ON_THE_HOST' "$ROOT/bin/opencode-docker" run --pure >/dev/null)
+grep -Eq -- ' -e OPENCODE_DB -e OPENCODE_CONFIG_CONTENT -e OPENCODE_SESSION_ID=.* cid-pinned opencode-session run --pure' "$LOG"
+if grep -Eq -- 'aak_secret|/mirrored/state|NOT_SET_ON_THE_HOST|--auto' "$LOG"; then exit 1; fi
+# The list can also come from config/.env, like the launch flags.
+printf 'HARNESS_DOCKER_FORWARD_ENV=OPENCODE_DB\n' > "$ENV_FILE"
+: > "$LOG"
+(cd "$TMP/work/project"; OPENCODE_DB=/mirrored/state/opencode.db "$ROOT/bin/opencode-docker" --version >/dev/null)
+grep -q -- ' -e OPENCODE_DB -e OPENCODE_SESSION_ID=' "$LOG"
+rm -f "$ENV_FILE"
+# Nothing is forwarded unless it is listed.
+: > "$LOG"
+(cd "$TMP/work/project"; OPENCODE_DB=/mirrored/state/opencode.db "$ROOT/bin/opencode-docker" --version >/dev/null)
+if grep -q -- 'OPENCODE_DB' "$LOG"; then exit 1; fi
+# A list that names something that is not a variable, or something the launcher or the container's start depends on, fails before Docker.
+# A file in the working directory that is named like a variable proves a pattern is refused as written, not expanded into it.
+: > "$TMP/work/project/GLOBBED"
+for bad in 'BAD-NAME' '*' 'GLOB*' '?LOBBED' 'GLOBBE[D]' 'PATH' 'OPENCODE_SESSION_ID' 'HARNESS_DOCKER_USER' 'LD_PRELOAD' 'DOCKER_HOST' 'HOME' 'SSH_AUTH_SOCK' '1BAD'; do
+  : > "$LOG"
+  if (cd "$TMP/work/project"; GLOBBED=value HARNESS_DOCKER_FORWARD_ENV="$bad" "$ROOT/bin/opencode-docker" --version >/dev/null 2>"$TMP/err"); then echo "forwarding '$bad' was allowed" >&2; exit 1; fi
+  grep -q 'HARNESS_DOCKER_FORWARD_ENV' "$TMP/err"
+  [[ ! -s "$LOG" ]]
+done
+# Empty entries between separators are skipped.
+: > "$LOG"
+(cd "$TMP/work/project"; OPENCODE_DB=/mirrored/state/opencode.db GLOBBED=value HARNESS_DOCKER_FORWARD_ENV=',OPENCODE_DB,,GLOBBED, ' "$ROOT/bin/opencode-docker" --version >/dev/null)
+grep -q -- ' -e OPENCODE_DB -e GLOBBED -e OPENCODE_SESSION_ID=' "$LOG"
+# Naming the file's name outright forwards it, with a newline or a tab between names.
+: > "$LOG"
+(cd "$TMP/work/project"; GLOBBED=value HARNESS_DOCKER_FORWARD_ENV='GLOBBED
+	OPENCODE_DB' OPENCODE_DB=/mirrored/state/opencode.db "$ROOT/bin/opencode-docker" --version >/dev/null)
+grep -q -- ' -e GLOBBED -e OPENCODE_DB -e OPENCODE_SESSION_ID=' "$LOG"
+rm -f "$TMP/work/project/GLOBBED"
+too_many=$(printf 'V%s ' $(seq 1 65))
+: > "$LOG"
+if (cd "$TMP/work/project"; HARNESS_DOCKER_FORWARD_ENV="$too_many" "$ROOT/bin/opencode-docker" --version >/dev/null 2>"$TMP/err"); then exit 1; fi
+grep -q 'at most 64' "$TMP/err"
+[[ ! -s "$LOG" ]]
+
 # SSH relay heal: the launcher restores the relay with the port the container
 # was started with, detached from its own stdio, without duplicating a relay
 # that another caller holds.

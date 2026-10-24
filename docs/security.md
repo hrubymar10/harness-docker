@@ -61,6 +61,12 @@ user's temporary files to sandbox processes.
 - Harness state directories are read-write and may contain authentication or
   session data.
 - Network egress is unrestricted.
+- Variables forwarded with `HARNESS_DOCKER_FORWARD_ENV` are kept out of argument
+  lists, but they are in the environment of that one session's processes, which
+  every process of the same user in the sandbox can read, and in the
+  environment of the host-side `docker` client for the length of the session.
+  The caller chooses the list; the launcher only refuses names that would change
+  how the container starts or finds programs.
 - Harness extensions, packages, plugins, skills, prompts, and local instruction
   files are trusted code or trusted input.
 - OpenCode configuration and data directories are both mounted read-write and

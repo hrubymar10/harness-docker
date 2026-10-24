@@ -18,6 +18,14 @@ with `XDG_DATA_HOME`. The controller forwards only customized XDG variables,
 does not change the container-wide XDG environment, requires absolute paths, and
 mirrors both resulting directories.
 
+A program that runs OpenCode once per turn can configure it for that session
+through the environment (`OPENCODE_CONFIG_CONTENT`, `OPENCODE_DB`,
+`XDG_CONFIG_HOME`, and the `OPENCODE_DISABLE_*` switches) by listing the names in
+`HARNESS_DOCKER_FORWARD_ENV`; see [Session lifecycle](lifecycle.md). It should
+also set `OPENCODE_LAUNCH_FLAGS=` (empty): the built-in `--auto` comes before the
+subcommand, so `opencode --auto run ...` starts the interactive interface
+instead of `run`, and the program passes its own flags after `run`.
+
 Authenticate on the host with `opencode auth login` or provide a supported
 provider key such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
 `MISTRAL_API_KEY`. The image supplies `opencode-session` and

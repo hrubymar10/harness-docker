@@ -25,7 +25,26 @@ The launch also forwards the host terminal's identity when it is set:
 `docker exec` would otherwise start from the container's environment, and the
 harness would fall back to plain text for links and the clipboard.
 
-The launchers are `claude-docker`, `codex-docker`, `pi-docker`, and
+A program that starts one harness process per turn, instead of an interactive
+session, can hand the harness per-session settings that must not show up in a
+process list. List their names in `HARNESS_DOCKER_FORWARD_ENV` (separated by
+whitespace or commas) in the launcher's environment or `config/.env`. Each listed
+name that is set is passed with `docker exec -e NAME`, which reads the value from
+the launcher's own environment, so a value never appears in an argument list; a
+listed name that is unset, and an empty entry, is skipped. The launcher refuses, before it starts
+Docker, a name that is not a plain variable name, a list of more than 64 names,
+the session variable, `HARNESS_DOCKER_*`, `DOCKER_*`, `SSH_*`, `LD_*`, `DYLD_*`,
+`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `IFS`, `ENV`, `BASH_ENV`, `TERM`, and
+the terminal identity variables above. See [Security](security.md) for who can
+read what is forwarded.
+
+Such a program can tell whether its launcher forwards: with
+`HARNESS_DOCKER_PRINT_FEATURES=1` the launcher prints its features one per line
+(`forward_env`) and exits before it starts Docker. A launcher that predates the
+probe runs the harness instead and prints no feature, so give the probe an
+argument that is harmless there, such as `--version`.
+
+The launchers are `claude-docker`, `codex-docker`, `pi-docker`,
 `vibe-docker`, and `opencode-docker`. Matching `*-docker-vscode-wrapper` commands provide an executable
 path for editor integrations.
 
