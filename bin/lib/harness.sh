@@ -34,7 +34,9 @@ load_harness_spec() {
       HARNESS_BINARY=codex
       HARNESS_SESSION_ENV=CODEX_SESSION_ID
       HARNESS_SESSION_WRAPPER=codex-session
-      HARNESS_LAUNCH_FLAGS=(--dangerously-bypass-approvals-and-sandbox)
+      # The shared CODEX_HOME holds the host's app-server daemon binary and
+      # socket, neither of which works from the container.
+      HARNESS_LAUNCH_FLAGS=(--dangerously-bypass-approvals-and-sandbox --no-daemon)
       HARNESS_NOTIFIER=codex-notifier
       HARNESS_STATE_DIR_ENVS=(CODEX_HOME)
       HARNESS_STATE_DIR_SUFFIXES=('')

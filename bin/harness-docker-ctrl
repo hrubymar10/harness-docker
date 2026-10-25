@@ -443,6 +443,17 @@ configure_compose() {
     [[ -f "$file" ]] || continue; base=$(basename "$file")
     add_override context $'services:\n  harness:\n    volumes:\n      - '"$file:$HOST_HOME/$base"
   done
+  # A host Codex keeps its background app-server in CODEX_HOME as a host binary
+  # and a control socket. Hide them, so no Codex in the sandbox, launched or
+  # not, tries to run or reach the host's daemon. Only existing directories
+  # are masked, because a missing mount target would be created on the host.
+  local dir codex_daemon_yaml=$'services:\n  harness:\n    tmpfs:' codex_daemon_count=0
+  for dir in packages app-server-daemon app-server-control; do
+    [[ -d "$CODEX_HOME_HOST/$dir" ]] || continue
+    codex_daemon_yaml+=$'\n      - '"$CODEX_HOME_HOST/$dir"':ro,size=0'
+    codex_daemon_count=$((codex_daemon_count + 1))
+  done
+  ((codex_daemon_count == 0)) || add_override codex-daemon "$codex_daemon_yaml"
   [[ ! -f "$HOME/.ssh/known_hosts" ]] || add_override ssh $'services:\n  harness:\n    volumes:\n      - '"$HOME/.ssh/known_hosts:$HOST_HOME/.ssh/known_hosts:ro"
   [[ ! -d "$HOME/.agents" ]] || add_override agents $'services:\n  harness:\n    volumes:\n      - '"$HOME/.agents:$HOST_HOME/.agents"
   local opencode_env=$'services:\n  harness:\n    environment:' variable

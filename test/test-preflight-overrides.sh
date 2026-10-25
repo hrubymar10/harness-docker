@@ -55,7 +55,7 @@ chmod +x "$TMP/bin/docker" "$TMP/bin/git" "$TMP/bin/date"
 export MOCK_LOG="$TMP/docker.log" MOCK_DATE_COUNTER="$TMP/date-counter"
 common=(PATH="$TMP/bin:$PATH" TMPDIR="$TMP/tmp" HARNESS_DOCKER_SKIP_UPDATE_CHECK=1 ALLOWED_BIND_MOUNTS=/allowed HOST_UID=1000 HOST_USER=tester)
 
-home="$TMP/home"; mkdir -p "$home/projects/secrets"; touch "$home/projects/.env" "$home/AGENTS.md"
+home="$TMP/home"; mkdir -p "$home/projects/secrets" "$home/.codex-custom/packages" "$home/.codex-custom/app-server-control"; touch "$home/projects/.env" "$home/AGENTS.md"
 cat > "$LOCAL" <<EOF
 services:
   harness:
@@ -68,6 +68,9 @@ EOF
 env "${common[@]}" HOME="$home" HOST_HOME="$home" CLAUDE_CONFIG_DIR="$home/.claude-custom" CODEX_HOME="$home/.codex-custom" PI_CODING_AGENT_DIR="$home/.pi/custom" PI_PACKAGE_DIR="$home/.pi/packages" VIBE_HOME="$home/.vibe-custom" OPENCODE_CONFIG_DIR="$home/.opencode-custom" XDG_CONFIG_HOME="$home/.config-custom" XDG_DATA_HOME="$home/.data-custom" DOCKER_GPU=all "$ROOT/bin/harness-docker-ctrl" build-image >/dev/null
 for d in "$home/.claude-custom" "$home/.codex-custom" "$home/.pi/custom" "$home/.pi/packages" "$home/.vibe-custom" "$home/.opencode-custom" "$home/.data-custom/opencode"; do [[ -d "$d" ]]; done
 grep -Fxq "YAML:      - $home/AGENTS.md:$home/AGENTS.md" "$MOCK_LOG"
+grep -Fxq "YAML:      - $home/.codex-custom/packages:ro,size=0" "$MOCK_LOG"
+grep -Fxq "YAML:      - $home/.codex-custom/app-server-control:ro,size=0" "$MOCK_LOG"
+if grep -Fq "$home/.codex-custom/app-server-daemon" "$MOCK_LOG"; then exit 1; fi
 grep -Fq 'count: all' "$MOCK_LOG"; grep -Fq "/dev/null:$home/projects/.env:ro" "$MOCK_LOG"; grep -Fq "$home/projects/secrets:ro,size=0" "$MOCK_LOG"
 for variable in OPENCODE_CONFIG_DIR XDG_CONFIG_HOME XDG_DATA_HOME; do grep -Fq -- "- $variable" "$MOCK_LOG"; done
 
