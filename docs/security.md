@@ -61,6 +61,12 @@ user's temporary files to sandbox processes.
 - Harness state directories are read-write and may contain authentication or
   session data.
 - Network egress is unrestricted.
+- TLS trust comes from the image's OS store, which every rebuild upgrades.
+  Programs that ship their own root store, such as Node's bundled store, the
+  harness CLIs built on embedded runtimes, and browsers installed through
+  `EXTRA_PACKAGES` such as Chromium, only stop trusting a distrusted CA once
+  their own release does; a rebuild picks up such a release when Alpine or the
+  harness publishes it.
 - Variables forwarded with `HARNESS_DOCKER_FORWARD_ENV` are kept out of argument
   lists, but they are in the environment of that one session's processes, which
   every process of the same user in the sandbox can read, and in the

@@ -6,7 +6,10 @@ the newest release that ships a wheel installable on the image's musl-based
 Alpine base. Releases published only as glibc wheels or source are skipped,
 because building Vibe from source needs a Rust toolchain the image does not
 include; a pinned version must therefore have a compatible wheel. The image
-supplies `vibe-session` and `vibe-notifier` integration commands.
+supplies `vibe-session` and `vibe-notifier` integration commands. The image
+sets `VIBE_ENABLE_SYSTEM_TRUST_STORE=true`, so Vibe verifies TLS against the
+image's OS trust store, which every rebuild upgrades, instead of the certifi
+bundle pinned in its own environment.
 
 Vibe state defaults to `~/.vibe`. Authenticate with Vibe's `/login` flow or
 provide `MISTRAL_API_KEY`. Treat the mounted state and provider key as readable

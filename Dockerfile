@@ -106,10 +106,16 @@ ENV NODE_PATH=/usr/local/lib/node_modules
 ENV PATH="${HOST_HOME}/.local/bin:/usr/local/custom-bin:${PATH}"
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 
+# ── Alpine package updates ──────────────────────────────────────
+# `apk add` does not upgrade a package that a cached layer above already holds,
+# so trust-store and other security fixes would otherwise wait for a --no-cache
+# build. HARNESS_REFRESH changes on every rebuild, which re-runs this upgrade.
+ARG HARNESS_REFRESH=""
+RUN apk upgrade --no-cache
+
 # CLI installs are ordered from least- to most-frequently pinned for caching.
 
 # ── opencode-ai (MIT) ───────────────────────────────────────────
-ARG HARNESS_REFRESH=""
 ARG OPENCODE_VERSION=""
 RUN if [ -n "$OPENCODE_VERSION" ]; then \
       npm install -g "opencode-ai@${OPENCODE_VERSION}"; \
@@ -123,6 +129,10 @@ ENV OPENCODE_DISABLE_AUTOUPDATE=1
 ARG VIBE_VERSION=""
 ENV UV_TOOL_DIR=/opt/uv-tools
 ENV UV_TOOL_BIN_DIR=/usr/local/bin
+# Vibe verifies TLS against the certifi bundle in its own environment, which
+# only changes when Vibe's dependencies do. Use the OS store instead, which the
+# package upgrade above keeps current.
+ENV VIBE_ENABLE_SYSTEM_TRUST_STORE=true
 # Some releases publish only glibc wheels. Refusing to build mistral-vibe from
 # source makes uv pick the newest release that installs on musl, instead of
 # failing on a missing Rust toolchain.

@@ -59,7 +59,8 @@ path for editor integrations.
 - `status` reports generation state and live session counts;
 - `shell` opens the configured container shell at the mirrored working path;
 - `exec <claude|codex|pi|vibe|opencode> [args...]` invokes a supported launcher;
-- `rebuild [--no-cache]` refreshes harness installs on cached base layers,
+- `rebuild [--no-cache]` upgrades Alpine packages and refreshes harness
+  installs on cached base layers,
   starts, health-checks, and switches to a replacement;
 - `build-image [--no-cache]` builds without starting a generation; and
 - `gc` removes non-current generations when they have no fresh host-side session heartbeats.
@@ -76,7 +77,8 @@ container rebuild. See [Host MCP gateway](mcpbridge.md).
 
 `start` and `build-image` reuse the last rebuild's harness layers by default.
 If the saved refresh token is missing or invalid, the next build mints one.
-`rebuild` uses the cache but refreshes harness installs. Use `--no-cache` with
+`rebuild` uses the cache but upgrades Alpine packages and refreshes harness
+installs. Use `--no-cache` with
 any of those commands to rebuild every image layer.
 
 Every successful image build also updates `harness-docker:latest` for direct
