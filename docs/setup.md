@@ -91,7 +91,12 @@ there as well. It is a visibility guard inside this stack, not a promise
 that hostile code cannot reach other exposed interfaces.
 
 The Compose stack mounts harness state read-write, `gpg-keys/` and custom tools
-read-only, and the Docker socket only into the socket proxy. Use the memory-limit
+read-only, and the Docker socket only into the socket proxy. `~/AGENTS.md` and
+`~/CLAUDE.md` are mounted read-write when they exist, so a session can maintain
+them. They are single-file binds: an edit that rewrites the file in place
+reaches the host, but a tool that saves by renaming a new file over it fails
+inside the sandbox, and a host editor that saves that way leaves running
+containers on the old content until the next start or rebuild. Use the memory-limit
 setting where desired. Docker Desktop and Docker Engine reach host helpers via
 `host.docker.internal` and the configured host-gateway mapping.
 

@@ -436,9 +436,12 @@ configure_compose() {
   COMPOSE_FILES=(-f "$PROJECT_DIR/docker-compose.yml")
   [[ ! -f "$CONFIG_DIR/docker-compose.local.yml" ]] || COMPOSE_FILES+=(-f "$CONFIG_DIR/docker-compose.local.yml")
   local file base yaml
+  # The home instruction files are writable, like the mounted harness state.
+  # They are single-file binds: edits that rewrite the file in place reach the
+  # host, but a tool that replaces the file by renaming a new one over it fails.
   for file in "$HOME/AGENTS.md" "$HOME/CLAUDE.md"; do
     [[ -f "$file" ]] || continue; base=$(basename "$file")
-    add_override context $'services:\n  harness:\n    volumes:\n      - '"$file:$HOST_HOME/$base:ro"
+    add_override context $'services:\n  harness:\n    volumes:\n      - '"$file:$HOST_HOME/$base"
   done
   [[ ! -f "$HOME/.ssh/known_hosts" ]] || add_override ssh $'services:\n  harness:\n    volumes:\n      - '"$HOME/.ssh/known_hosts:$HOST_HOME/.ssh/known_hosts:ro"
   [[ ! -d "$HOME/.agents" ]] || add_override agents $'services:\n  harness:\n    volumes:\n      - '"$HOME/.agents:$HOST_HOME/.agents"

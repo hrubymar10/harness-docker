@@ -74,7 +74,9 @@ user's temporary files to sandbox processes.
   The caller chooses the list; the launcher only refuses names that would change
   how the container starts or finds programs.
 - Harness extensions, packages, plugins, skills, prompts, and local instruction
-  files are trusted code or trusted input.
+  files are trusted code or trusted input. `~/AGENTS.md` and `~/CLAUDE.md` are
+  writable from the sandbox, so a session can change the instructions that
+  later host and sandbox sessions load.
 - OpenCode configuration and data directories are both mounted read-write and
   can contain provider authentication as well as session data.
 - The notification server's bundled sound playback is macOS-specific unless its
