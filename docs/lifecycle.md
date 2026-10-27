@@ -40,7 +40,10 @@ read what is forwarded.
 
 Such a program can tell whether its launcher forwards: with
 `HARNESS_DOCKER_PRINT_FEATURES=1` the launcher prints its features one per line
-(`forward_env`) and exits before it starts Docker. A launcher that predates the
+(`forward_env`; `claude-docker` also prints `claude_home_shared`, which says the
+container works in the host's Claude configuration directory, mounted at the same
+path, so a session made on either side can be continued on the other) and exits
+before it starts Docker. A launcher that predates the
 probe runs the harness instead and prints no feature, so give the probe an
 argument that is harmless there, such as `--version`.
 

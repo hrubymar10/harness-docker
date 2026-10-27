@@ -53,6 +53,7 @@ _die() {
 # HARNESS_DOCKER_PRINT_FEATURES=1 the launcher prints them, one per line, and
 # exits before it touches Docker: a launcher without this probe would run the
 # harness instead, and prints no feature.
+# Features of one harness's launcher only (HARNESS_EXTRA_FEATURES in harness.sh) follow them.
 HARNESS_DOCKER_FEATURES=(forward_env)
 
 # HARNESS_DOCKER_FORWARD_ENV lists host variables, separated by whitespace or
@@ -110,7 +111,7 @@ harness_main() {
   fi
   load_harness_spec "$HARNESS"
   if [[ "${HARNESS_DOCKER_PRINT_FEATURES:-}" == 1 ]]; then
-    printf '%s\n' "${HARNESS_DOCKER_FEATURES[@]}"
+    printf '%s\n' "${HARNESS_DOCKER_FEATURES[@]}" ${HARNESS_EXTRA_FEATURES[@]+"${HARNESS_EXTRA_FEATURES[@]}"}
     return 0
   fi
   launch_flags_variable="$(printf '%s' "$HARNESS" | tr '[:lower:]' '[:upper:]')_LAUNCH_FLAGS"

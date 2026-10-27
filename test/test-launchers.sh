@@ -96,6 +96,13 @@ rm -f "$ENV_FILE"
 (cd "$TMP/work/project"; HARNESS_DOCKER_PRINT_FEATURES=1 "$ROOT/bin/opencode-docker" --version > "$TMP/out")
 [[ "$(cat "$TMP/out")" == forward_env ]]
 [[ ! -s "$LOG" ]]
+# Only the Claude launcher says its configuration directory is the host's.
+: > "$LOG"
+(cd "$TMP/work/project"; HARNESS_DOCKER_PRINT_FEATURES=1 "$ROOT/bin/claude-docker" --version > "$TMP/out")
+[[ "$(cat "$TMP/out")" == $'forward_env\nclaude_home_shared' ]]
+[[ ! -s "$LOG" ]]
+(cd "$TMP/work/project"; HARNESS_DOCKER_PRINT_FEATURES=1 "$ROOT/bin/codex-docker" --version > "$TMP/out")
+[[ "$(cat "$TMP/out")" == forward_env ]]
 : > "$LOG"
 (cd "$TMP/work/project"; HARNESS_DOCKER_PRINT_FEATURES=0 "$ROOT/bin/opencode-docker" --version >/dev/null)
 grep -q 'exec ' "$LOG"

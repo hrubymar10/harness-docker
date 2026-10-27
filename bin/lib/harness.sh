@@ -20,6 +20,8 @@ harness_from_launcher() {
 
 load_harness_spec() {
   HARNESS="${1:-}"
+  # Features only this harness's launcher has, printed after the common ones by the feature probe.
+  HARNESS_EXTRA_FEATURES=()
   case "$HARNESS" in
     claude)
       HARNESS_BINARY=claude
@@ -29,6 +31,9 @@ load_harness_spec() {
       HARNESS_NOTIFIER=claude-notifier
       HARNESS_STATE_DIR_ENVS=(CLAUDE_CONFIG_DIR)
       HARNESS_STATE_DIR_SUFFIXES=('')
+      # The container mounts the host's Claude configuration directory at the same path and runs with CLAUDE_CONFIG_DIR set to it, so
+      # a session made here is in the host's projects directory and one made there can be continued here.
+      HARNESS_EXTRA_FEATURES=(claude_home_shared)
       ;;
     codex)
       HARNESS_BINARY=codex
