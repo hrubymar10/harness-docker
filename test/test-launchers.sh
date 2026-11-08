@@ -94,15 +94,15 @@ rm -f "$ENV_FILE"
 # The feature probe answers before Docker is touched; a launcher without it would run the harness.
 : > "$LOG"
 (cd "$TMP/work/project"; HARNESS_DOCKER_PRINT_FEATURES=1 "$ROOT/bin/opencode-docker" --version > "$TMP/out")
-[[ "$(cat "$TMP/out")" == forward_env ]]
+[[ "$(cat "$TMP/out")" == $'forward_env\nstop_on_signal' ]]
 [[ ! -s "$LOG" ]]
 # Only the Claude launcher says its configuration directory is the host's.
 : > "$LOG"
 (cd "$TMP/work/project"; HARNESS_DOCKER_PRINT_FEATURES=1 "$ROOT/bin/claude-docker" --version > "$TMP/out")
-[[ "$(cat "$TMP/out")" == $'forward_env\nclaude_home_shared' ]]
+[[ "$(cat "$TMP/out")" == $'forward_env\nstop_on_signal\nclaude_home_shared' ]]
 [[ ! -s "$LOG" ]]
 (cd "$TMP/work/project"; HARNESS_DOCKER_PRINT_FEATURES=1 "$ROOT/bin/codex-docker" --version > "$TMP/out")
-[[ "$(cat "$TMP/out")" == forward_env ]]
+[[ "$(cat "$TMP/out")" == $'forward_env\nstop_on_signal' ]]
 : > "$LOG"
 (cd "$TMP/work/project"; HARNESS_DOCKER_PRINT_FEATURES=0 "$ROOT/bin/opencode-docker" --version >/dev/null)
 grep -q 'exec ' "$LOG"

@@ -37,8 +37,10 @@ codex-docker
 ```
 
 Launch from a mounted working directory. Arguments are forwarded to the selected
-harness. Use `harness-docker-ctrl shell`, `exec`, `rebuild`, `gc`, or `stop` for
-shared lifecycle operations. Read [Setup](docs/setup.md) before first use.
+harness. A launcher that receives TERM, INT, or HUP stops its session in the
+container before it exits (see [Session lifecycle](docs/lifecycle.md)). Use
+`harness-docker-ctrl shell`, `exec`, `rebuild`, `gc`, or `stop` for shared
+lifecycle operations. Read [Setup](docs/setup.md) before first use.
 `rebuild` upgrades the image's Alpine packages and refreshes the harness CLIs
 while reusing cached base layers; pass `--no-cache` for a full rebuild. Successful builds also tag the image as
 `harness-docker:latest` for direct external runs.

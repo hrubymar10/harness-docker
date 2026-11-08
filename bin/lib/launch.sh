@@ -54,7 +54,7 @@ _die() {
 # exits before it touches Docker: a launcher without this probe would run the
 # harness instead, and prints no feature.
 # Features of one harness's launcher only (HARNESS_EXTRA_FEATURES in harness.sh) follow them.
-HARNESS_DOCKER_FEATURES=(forward_env)
+HARNESS_DOCKER_FEATURES=(forward_env stop_on_signal)
 
 # HARNESS_DOCKER_FORWARD_ENV lists host variables, separated by whitespace or
 # commas, to hand to the harness for this one session. Only the names reach
@@ -93,10 +93,42 @@ _forwarded_env_flags() {
   done
 }
 
+# Trap handler for TERM, INT and HUP. It runs inside harness_main and uses its
+# variables. Before `docker exec` starts, and after its session has ended by
+# itself, it only records the signal.
+_launcher_signalled() {
+  [[ -z "$received_signal" ]] || return 0
+  received_signal="$1"
+  [[ -z "$exec_pid" ]] || _end_signalled_session
+}
+
+# Ends the session of a signalled launcher, cleans up, and exits with 128 plus
+# the signal number. Like the handler, it uses harness_main's variables.
+# shellcheck disable=SC2031
+_end_signalled_session() {
+  # Only a failed `docker exec` is retried; a session that has not started yet
+  # is cancelled by the first attempt.
+  for _ in 1 2 3; do
+    stop_session_now "$container_id" "$session_id" "$docker_user" 5 && break
+    sleep 0.25
+  done
+  # The client exits once its session is gone. Give it a second to do so, so that
+  # an interactive one restores the terminal, before it is stopped.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    kill -0 "$exec_pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill "$exec_pid" 2>/dev/null
+  wait "$exec_pid" 2>/dev/null
+  run_session_cleanup "$container_id" "$session_id" "$generation" "$docker_user"
+  trap - TERM INT HUP
+  exit $((128 + $(kill -l "$received_signal")))
+}
+
 harness_main() {
   local script_path derived_harness container_id generation status workdir mounts mounted source_path
   local docker_user session_id exit_code launch_flags_variable launch_flags_was_set
-  local launch_flags_host_value relay_port
+  local launch_flags_host_value relay_port exec_pid received_signal
   local -a docker_flags launch_flags forward_env_flags
 
   script_path=$(_launcher_script_path "$0")
@@ -192,6 +224,16 @@ harness_main() {
     if [[ -n "${!name:-}" ]]; then terminal_env+=(-e "$name=${!name}"); fi
   done
 
+  # `docker exec` runs in the background so that a TERM, INT or HUP sent to this
+  # launcher alone is handled at once instead of after `docker exec` returns.
+  # It does not forward signals, so the launcher ends the session in the
+  # container itself and exits only when the session is gone. The explicit stdin
+  # redirection keeps the caller's input: a background job would get /dev/null.
+  received_signal=
+  exec_pid=
+  trap '_launcher_signalled TERM' TERM
+  trap '_launcher_signalled INT' INT
+  trap '_launcher_signalled HUP' HUP
   set +e
   docker exec "${docker_flags[@]}" \
     ${terminal_env[@]+"${terminal_env[@]}"} \
@@ -199,10 +241,17 @@ harness_main() {
     -e "$HARNESS_SESSION_ENV=$session_id" \
     -e "HARNESS_DOCKER_SESSION_PID_DIR=${HARNESS_DOCKER_SESSION_PID_DIR:-/tmp}" \
     -u "$docker_user" -w "$workdir" "$container_id" \
-    "$HARNESS_SESSION_WRAPPER" ${launch_flags[@]+"${launch_flags[@]}"} "$@"
+    "$HARNESS_SESSION_WRAPPER" ${launch_flags[@]+"${launch_flags[@]}"} "$@" <&0 &
+  exec_pid=$!
+  # From here on a signal ends the session from the trap; one that came earlier is handled now.
+  [[ -z "$received_signal" ]] || _end_signalled_session
+  wait "$exec_pid"
   exit_code=$?
+  # The session ended by itself: a signal during the cleanup below is only recorded.
+  exec_pid=
   set -e
 
   run_session_cleanup "$container_id" "$session_id" "$generation" "$docker_user"
+  trap - TERM INT HUP
   return "$exit_code"
 }

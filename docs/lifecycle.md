@@ -38,9 +38,21 @@ the session variable, `HARNESS_DOCKER_*`, `DOCKER_*`, `SSH_*`, `LD_*`, `DYLD_*`,
 the terminal identity variables above. See [Security](security.md) for who can
 read what is forwarded.
 
-Such a program can tell whether its launcher forwards: with
+A launcher that receives TERM, INT, or HUP ends its session before it exits.
+`docker exec` forwards no signal, so the launcher sends the session's wrapper in
+the container a HUP, waits up to 5 seconds for it to exit, kills the wrapper's
+process group if it is still there, and then exits with 128 plus the signal
+number. A supervisor that sends TERM and waits for the launcher to exit therefore
+knows the harness is gone and can reuse its session. A session that is still
+starting is cancelled instead and exits before it starts the harness. The
+wrapper gives the session's processes up to 2 seconds to exit on TERM before it
+kills those that remain. A launcher that is killed outright, or whose host goes
+away, is cleaned up by its watchdog instead, within one 15-second heartbeat.
+
+Such a program can tell what its launcher does: with
 `HARNESS_DOCKER_PRINT_FEATURES=1` the launcher prints its features one per line
-(`forward_env`; `claude-docker` also prints `claude_home_shared`, which says the
+(`forward_env` for the forwarding above and `stop_on_signal` for the signal
+handling; `claude-docker` also prints `claude_home_shared`, which says the
 container works in the host's Claude configuration directory, mounted at the same
 path, so a session made on either side can be continued on the other) and exits
 before it starts Docker. A launcher that predates the

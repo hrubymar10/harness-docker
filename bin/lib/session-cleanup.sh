@@ -4,6 +4,7 @@
 # Session cleanup for harness-docker wrappers.
 # Set HARNESS, then call: start_session_watchdog <container> <session_id> <parent_pid> <generation> [user]
 # and after docker exec: run_session_cleanup <container> <session_id> <generation> [user]
+# A launcher that is signalled calls stop_session_now first.
 # Call reap_stale_sessions <container> [user] before starting a new session to
 # sweep sessions whose host client died without cleanup (host crash/reboot, or
 # a pre-fix watchdog that was killed together with the terminal).
@@ -226,6 +227,44 @@ _do_session_cleanup() {
   ' sh "$pidfile" 2>/dev/null)
   status=$?
   _session_debug_log "_do_session_cleanup session_id=$session_id status=$status result=${result:-none}"
+  return "$status"
+}
+
+# Ends the session now and returns once its in-container wrapper is gone, for a
+# launcher that was told to stop. `docker exec` does not forward signals, and the
+# watchdog would only notice the dead launcher at its next heartbeat. Waits up to
+# <timeout> seconds after the HUP, then kills the wrapper's process group, which
+# is its own because `docker exec` starts it as a session leader. A session that
+# has not written its pidfile yet is cancelled instead: the marker written first
+# makes the wrapper exit before it starts the harness (see harness-session.sh).
+# It runs as the session's user, so that the wrapper can remove the marker.
+# Usage: stop_session_now <container> <session_id> <user> [timeout_seconds]
+stop_session_now() {
+  local container="$1" session_id="$2" user="$3" timeout="${4:-5}" pidfile result status
+  pidfile=$(_session_pidfile "$session_id")
+  result=$(docker exec -u "$user" "$container" sh -c '
+    f="$1"; ticks=$(($2 * 10)); cancel="${1%.pid}.cancelled"
+    mkdir -p "${1%/*}" && : > "$cancel" || exit 1
+    [ -f "$f" ] || { echo "cancelled_before_start"; exit 0; }
+    pid=$(cat "$f")
+    # A zombie still has a /proc entry; it no longer runs anything.
+    alive() {
+      [ -d /proc/self ] || { kill -0 "$1" 2>/dev/null; return; }
+      state=$(sed "s/.*) //" "/proc/$1/stat" 2>/dev/null | cut -c1)
+      [ -n "$state" ] && [ "$state" != Z ]
+    }
+    kill -HUP "$pid" 2>/dev/null
+    while [ "$ticks" -gt 0 ] && alive "$pid"; do sleep 0.1; ticks=$((ticks - 1)); done
+    if alive "$pid"; then
+      kill -KILL -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
+      echo "killed pid=$pid"
+    else
+      echo "stopped pid=$pid"
+    fi
+    rm -f "$f" "$cancel"
+  ' sh "$pidfile" "$timeout" 2>/dev/null)
+  status=$?
+  _session_debug_log "stop_session_now session_id=$session_id status=$status result=${result:-none}"
   return "$status"
 }
 
