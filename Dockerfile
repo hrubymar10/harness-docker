@@ -96,11 +96,16 @@ RUN mkdir -p "$(dirname ${HOST_HOME})" \
 ENV HOST_UID="${HOST_UID}" HOST_USER="${HOST_USER}" HOST_HOME="${HOST_HOME}"
 
 # ── Useful language tooling (LSP servers) ──────────────────────────
-RUN npm install -g typescript typescript-language-server pyright
+# Every npm install removes /root/.npm in its own RUN: a download cache left in
+# a layer ships in the image even when a later layer deletes it.
+RUN npm install -g typescript typescript-language-server pyright \
+    && rm -rf /root/.npm
 
 # ── Extra user-specified npm packages (no Dockerfile edit needed) ──
 ARG EXTRA_NPM_PACKAGES=""
-RUN if [ -n "$EXTRA_NPM_PACKAGES" ]; then npm install -g $EXTRA_NPM_PACKAGES; fi
+RUN if [ -n "$EXTRA_NPM_PACKAGES" ]; then \
+      npm install -g $EXTRA_NPM_PACKAGES && rm -rf /root/.npm; \
+    fi
 
 ENV NODE_PATH=/usr/local/lib/node_modules
 ENV PATH="${HOST_HOME}/.local/bin:/usr/local/custom-bin:${PATH}"
@@ -122,6 +127,13 @@ RUN if [ -n "$OPENCODE_VERSION" ]; then \
     else \
       npm install -g opencode-ai; \
     fi \
+    && rm -rf /root/.npm \
+    # npm installs every libc and CPU variant; only the one postinstall linked to bin/opencode.exe runs.
+    && opencode_package=/usr/local/lib/node_modules/opencode-ai \
+    && for platform_package in "$opencode_package"/node_modules/opencode-*; do \
+         [ "$platform_package/bin/opencode" -ef "$opencode_package/bin/opencode.exe" ] \
+           || rm -rf "$platform_package"; \
+       done \
     && opencode --version
 ENV OPENCODE_DISABLE_AUTOUPDATE=1
 
@@ -137,9 +149,9 @@ ENV VIBE_ENABLE_SYSTEM_TRUST_STORE=true
 # source makes uv pick the newest release that installs on musl, instead of
 # failing on a missing Rust toolchain.
 RUN if [ -n "$VIBE_VERSION" ]; then \
-      uv tool install --no-build-package mistral-vibe "mistral-vibe==${VIBE_VERSION}"; \
+      uv tool install --no-cache --no-build-package mistral-vibe "mistral-vibe==${VIBE_VERSION}"; \
     else \
-      uv tool install --no-build-package mistral-vibe mistral-vibe; \
+      uv tool install --no-cache --no-build-package mistral-vibe mistral-vibe; \
     fi \
     && chmod -R a+rX /opt/uv-tools \
     && gosu "${HOST_USER}" vibe --version
@@ -150,7 +162,14 @@ RUN if [ -n "$PI_VERSION" ]; then \
       npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@${PI_VERSION}"; \
     else \
       npm install -g --ignore-scripts @earendil-works/pi-coding-agent; \
-    fi
+    fi \
+    && rm -rf /root/.npm \
+    # pi's shrinkwrap installs esbuild's binary for every platform; only this one runs.
+    && pi_package=/usr/local/lib/node_modules/@earendil-works/pi-coding-agent \
+    && esbuild_platform=$(node -p 'process.platform + "-" + process.arch') \
+    && test -d "$pi_package/node_modules/@esbuild/$esbuild_platform" \
+    && find "$pi_package/node_modules/@esbuild" -mindepth 1 -maxdepth 1 ! -name "$esbuild_platform" -exec rm -rf {} + \
+    && (cd "$pi_package" && node -e 'require("esbuild").transformSync("let ok = true")')
 
 # ── Codex CLI (npm package) ──────────────────────────────────────
 ARG CODEX_VERSION=""
@@ -159,6 +178,7 @@ RUN if [ -n "$CODEX_VERSION" ]; then \
     else \
       npm install -g @openai/codex; \
     fi \
+    && rm -rf /root/.npm \
     && vendored_rg=$(find /usr/local/lib/node_modules -type f -path '*/codex-path/rg' -print -quit) \
     && test -n "$vendored_rg" \
     && ln -sf /usr/bin/rg "$vendored_rg" \
