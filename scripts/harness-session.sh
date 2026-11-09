@@ -41,16 +41,16 @@ HARNESS_PID=""
 # from cleanup only.
 # shellcheck disable=SC2329
 session_running() {
-    # Without /proc (a test on a macOS host), only the harness is checked.
-    [ -d /proc/self ] || { [ -n "$HARNESS_PID" ] && kill -0 "$HARNESS_PID" 2>/dev/null; return; }
-    for stat in /proc/[0-9]*/stat; do
-        [ "$stat" = "/proc/$$/stat" ] && continue
-        read -r line 2>/dev/null < "$stat" || continue
-        # After the command name: state, parent, process group.
-        # shellcheck disable=SC2086
-        set -- ${line##*) }
-        [ "$3" = "$$" ] && [ "$1" != Z ] && return 0
-    done
+    processes=$(ps -A -o pid= -o ppid= -o pgid= -o stat=)
+    while read -r pid parent group state; do
+        [ "$group" = "$$" ] && [ "$pid" != "$$" ] || continue
+        # Besides the harness, this shell's own children are the ps above and sleep.
+        [ "$parent" = "$$" ] && [ "$pid" != "$HARNESS_PID" ] && continue
+        case "$state" in Z*) continue ;; esac
+        return 0
+    done <<EOF
+$processes
+EOF
     return 1
 }
 
